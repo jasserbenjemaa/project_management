@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String       @id @default(uuid())
+  name            String
+  email           String       @unique
+  password        String
+  role            Role
+  assignmentsMade Assignment[] @relation("AssignedBy")
+  assignments     Assignment[] @relation("AssignedUser")
+  timeEntries     TimeEntry[]
+  manager         User?        @relation("ReportsTo", fields: [managerId], references: [id])
+  managerId       String?
+  reports         User[]       @relation("ReportsTo")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  status      ProjectStatus @default(PLANNED)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  assignments Assignment[]
+  tasks       Task[]
+}
+
+model Task {
+  id            String      @id @default(uuid())
+  title         String
+  status        TaskStatus  @default(TODO)
+  projectId     String
+  estimatedDays Float?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  project       Project     @relation(fields: [projectId], references: [id])
+  timeEntries   TimeEntry[]
+}
+
+model TimeEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  taskId    String
+  days      Float
+  loggedAt  DateTime @default(now())
+  note      String?
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Assignment {
+  id            String   @id @default(uuid())
+  userId        String
+  projectId     String
+  assignedById  String
+  roleOnProject String
+  startDate     DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  assignedBy    User     @relation("AssignedBy", fields: [assignedById], references: [id])
+  project       Project  @relation(fields: [projectId], references: [id])
+  user          User     @relation("AssignedUser", fields: [userId], references: [id])
+
+  @@unique([userId, projectId])
+}
+
+enum Role {
+  UNIT_MANAGER
+  PEOPLE_MANAGER
+  CONSULTANT
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+}
+
+enum TaskStatus {
+  BLOCKED
+  TODO
+  IN_PROGRESS
+  DONE
+}
