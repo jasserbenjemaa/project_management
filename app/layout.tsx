@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Inter, Roboto } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "sonner";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
 const robotoHeading = Roboto({
   subsets: ["latin"],
@@ -45,7 +46,8 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        {children} <Toaster position="top-center" />
+        {children}
+        <Toaster position="top-center" />
       </body>
     </html>
   );
