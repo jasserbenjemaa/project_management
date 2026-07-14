@@ -22,7 +22,7 @@ export async function createUser(
   role: Role,
   managerId: string,
 ) {
-  const hashedPassword = hashPassword(password);
+  const hashedPassword = await hashPassword(password);
   try {
     const user = await db.user.create({
       data: {
@@ -80,7 +80,6 @@ export async function getSession() {
     const token = cookieStore.get(TOKEN_NAME)?.value;
     if (!token) return null;
     const payload = await verifyJWT(token);
-    console.log("user id in the getSession function:");
     return payload ? { userId: payload.userId } : null;
   } catch (e) {
     console.error("error getting session", e);

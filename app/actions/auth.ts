@@ -1,6 +1,6 @@
 "use server";
 
-import { email, z } from "zod";
+import { z } from "zod";
 import { createSession, deleteSession, verifyPassword } from "@/lib/auth";
 import { getUserByEmail } from "@/lib/dal";
 import { redirect } from "next/navigation";
@@ -20,7 +20,7 @@ export type ActionResponse = {
 export async function signIn(formData: FormData): Promise<ActionResponse> {
   const data = {
     email: formData.get("email") as string,
-    password: formData.get("email") as string,
+    password: formData.get("password") as string,
   };
   const validationResult = SignInSchema.safeParse(data);
   if (!validationResult.success)
@@ -30,19 +30,11 @@ export async function signIn(formData: FormData): Promise<ActionResponse> {
       errors: validationResult.error.flatten().fieldErrors,
     };
   const user = await getUserByEmail(data.email);
-  if (!user)
+  if (!user || !(await verifyPassword(data.password, user.password)))
     return {
       success: false,
       message: "Invalid email or password",
       errors: { email: ["invalid email or password"] },
-    };
-
-  const isPasswordValid = await verifyPassword(data.password, user.password);
-  if (!isPasswordValid)
-    return {
-      success: false,
-      message: "Invalid email or password",
-      errors: { password: ["Invalid email or password"] },
     };
 
   await createSession(user.id);

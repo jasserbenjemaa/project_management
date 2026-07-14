@@ -6,6 +6,8 @@ import {
 } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import "dotenv/config";
+import { hashPassword } from "@/lib/auth";
+import { hash } from "crypto";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DIRECT_URL,
@@ -28,7 +30,7 @@ async function main() {
       name: "Alice UnitManager",
       email: "alice@company.com",
       role: Role.UNIT_MANAGER,
-      password: "hashed_password_123", // In production, use bcrypt/argon2 to hash this
+      password: await hashPassword("0000"), // In production, use bcrypt/argon2 to hash this
     },
   });
 
