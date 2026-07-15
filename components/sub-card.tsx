@@ -87,36 +87,6 @@ const SubCard = (props: {
         {description}
       </CardContent>
 
-      <div className=" absolute top-40 left-1 flex justify-around w-full ">
-        <div className="flex flex-col">
-          <span className="text-base font-bold text-slate-900">
-            {stats.done}
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            Done
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-base font-bold text-slate-900">
-            {stats.inProgress}
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-            In progress
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-base font-bold text-slate-900">
-            {stats.blocked}
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-            Blocked
-          </span>
-        </div>
-      </div>
-
       <button
         type="button"
         aria-label={`Go to ${name}`}

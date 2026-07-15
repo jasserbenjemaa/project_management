@@ -1,7 +1,6 @@
 "use client";
 
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
 // 1. Navigation items config
 
 // 2. The Sidebar Component (Bypasses TypeScript 'asChild' issue)
@@ -16,7 +15,6 @@ export default function DashboardLayout({
     <SidebarProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-background">
         {/* Sidebar Panel */}
-        <AppSidebar />
 
         {/* Main Workspace */}
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-muted/20">
