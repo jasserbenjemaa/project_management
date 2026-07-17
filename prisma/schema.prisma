@@ -13,6 +13,8 @@ model User {
   email           String       @unique
   password        String
   role            Role
+  artifact_type   Artifact?
+  seniority_level Level?
   assignmentsMade Assignment[] @relation("AssignedBy")
   assignments     Assignment[] @relation("AssignedUser")
   timeEntries     TimeEntry[]
@@ -91,4 +93,19 @@ enum TaskStatus {
   TODO
   IN_PROGRESS
   DONE
+}
+
+enum Artifact {
+  HLT
+  LLT
+  LLR
+  CODE_REVIEW
+  ARCHITECTURE
+  }
+
+enum Level{
+  JUNIOR
+  MID
+  SENIOR
+  EXPERT
 }

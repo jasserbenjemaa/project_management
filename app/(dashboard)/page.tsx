@@ -6,26 +6,25 @@ import {
   ChartColumnBig,
   LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import SubCard from "@/components/sub-card";
 import Image from "next/image";
 const Home = () => {
   const name = "Jasser Ben Jomaa";
 
-  const [dateText] = useState(() => {
+  const dateText = (): string => {
     const now = new Date();
     const day = now.getDate();
     const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
     const year = now.getFullYear();
     return `${day}, ${weekday}, ${year}`;
-  });
+  };
   interface CardData {
     linkTo: string;
     imageUrl: string;
     icon: LucideIcon;
     name: string;
-    color?: string;
+    color: string;
     description: string;
     stats?: { done: number; inProgress: number; blocked: number };
   }
@@ -79,15 +78,8 @@ const Home = () => {
           <CardHeader className="p-0 relative z-10 flex flex-col gap-4 max-w-4xl">
             {/* 1. Eyebrow, simple and plain */}
             <div className="inline-flex items-center gap-2 w-fit">
-              <span className="text-base md:text-lg font-semibold text-blue-600">
+              <span className="text-base md:text-xl font-semibold text-blue-600">
                 Hello
-              </span>
-              <span
-                role="img"
-                aria-label="waving hand"
-                className="animate-wave text-lg md:text-xl inline-block"
-              >
-                👋
               </span>
             </div>
 
@@ -100,7 +92,7 @@ const Home = () => {
             {/* 3. Date text, monospace badge */}
             <div className="w-fit bg-slate-50 border border-slate-200 px-4 py-2 rounded-lg shadow-sm mt-5">
               <span className="text-sm md:text-base font-mono text-slate-600">
-                {dateText}
+                {dateText()}
               </span>
             </div>
           </CardHeader>

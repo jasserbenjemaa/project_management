@@ -1,5 +1,5 @@
 "use client";
-import { DottedSeparator } from "@/components/dotted-sparator";
+import { DottedSeparator } from "@/components/dotted-separator";
 import {
   Card,
   CardContent,
