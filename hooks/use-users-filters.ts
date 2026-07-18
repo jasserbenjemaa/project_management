@@ -1,77 +1,48 @@
-"use client";
+import { parseAsString, parseAsStringEnum, useQueryStates } from "nuqs";
 
-import { useCallback, useMemo } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArtifactType } from "@/lib/types";
+// Mirrors the Prisma enums so the URL values and the DB values never drift apart.
+export const ARTIFACT_TABS = [
+  "all",
+  "HLT",
+  "LLT",
+  "LLR",
+  "CODE_REVIEW",
+  "ARCHITECTURE",
+] as const;
 
-export type UsersFilters = {
-  tab: ArtifactType;
-  search: string;
-  role: string; // UserRole | "all"
-  project: string; // Project id | "all"
-};
+export const USER_ROLES = [
+  "all",
+  "UNIT_MANAGER",
+  "PEOPLE_MANAGER",
+  "CONSULTANT",
+] as const;
 
-const DEFAULTS: UsersFilters = {
-  tab: "HLT",
-  search: "",
-  role: "all",
-  project: "all",
-};
+export type ArtifactTab = (typeof ARTIFACT_TABS)[number];
+export type RoleFilter = (typeof USER_ROLES)[number];
 
 /**
- * Keeps the Users view filters (tab, search, role, project) in the URL
- * query string, e.g. /users?tab=LLR&role=CONSULTANT&project=abc123
+ * URL-synced filters for the Users table.
  *
- * - Shareable / bookmarkable links
- * - Back/forward button works
- * - Survives refresh
+ * Usage:
+ *   const [filters, setFilters] = useUsersFilters();
+ *   filters.search      -> string
+ *   filters.role        -> RoleFilter
+ *   filters.projectId    -> string ("all" | Project.id)
+ *   filters.artifact     -> ArtifactTab (drives the active Tab)
  *
- * NOTE: `useSearchParams` requires this tree to be rendered inside a
- * <Suspense> boundary if the page is statically rendered. Wrap the page
- * that renders <UsersView /> like:
+ *   setFilters({ search: "jane" })                 // updates ?search=jane
+ *   setFilters({ role: "CONSULTANT", search: "" })  // batches multiple params in one push
  *
- *   <Suspense fallback={null}>
- *     <UsersView users={users} projects={projects} />
- *   </Suspense>
+ * Every field defaults to a value that means "no filter", so an empty
+ * querystring is always a valid, fully-collapsed state (?search=&role=all&...).
  */
 export const useUsersFilters = () => {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  const filters: UsersFilters = useMemo(
-    () => ({
-      tab: (searchParams.get("tab") as ArtifactType) ?? DEFAULTS.tab,
-      search: searchParams.get("search") ?? DEFAULTS.search,
-      role: searchParams.get("role") ?? DEFAULTS.role,
-      project: searchParams.get("project") ?? DEFAULTS.project,
-    }),
-    [searchParams],
-  );
-
-  const setFilter = useCallback(
-    (key: keyof UsersFilters, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-
-      if (!value || value === DEFAULTS[key]) {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-
-      const query = params.toString();
-      router.push(query ? `${pathname}?${query}` : pathname, {
-        scroll: false,
-      });
-    },
-    [pathname, router, searchParams],
-  );
-
-  return {
-    ...filters,
-    setTab: (value: ArtifactType) => setFilter("tab", value),
-    setSearch: (value: string) => setFilter("search", value),
-    setRole: (value: string) => setFilter("role", value),
-    setProject: (value: string) => setFilter("project", value),
-  };
+  return useQueryStates({
+    search: parseAsString.withDefault(""),
+    role: parseAsStringEnum<RoleFilter>([...USER_ROLES]).withDefault("all"),
+    projectId: parseAsString.withDefault("all"),
+    artifact: parseAsStringEnum<ArtifactTab>([...ARTIFACT_TABS]).withDefault(
+      "all",
+    ),
+  });
 };

@@ -157,7 +157,7 @@ export function NavSidebar({ name, role }: AppSidebarProps) {
 
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem className="flex items-center gap-2 m-2 group-data-[collapsible=icon]:pb-2.5 group-data-[collapsible=icon]:m-0 group-data-[collapsible=icon]:justify-center">
+          <SidebarMenuItem className="flex items-center  m-2 group-data-[collapsible=icon]:pb-2.5 group-data-[collapsible=icon]:m-0 group-data-[collapsible=icon]:justify-center">
             <SidebarMenuButton
               size="lg"
               className="w-full data-[state=open]:bg-transparent group-data-[collapsible=icon]:justify-center "
@@ -168,7 +168,7 @@ export function NavSidebar({ name, role }: AppSidebarProps) {
                 </AvatarFallback>
               </Avatar>
               <div
-                className={`flex flex-col text-left leading-tight whitespace-nowrap delay-150 ${revealBase} ${revealExpanded}`}
+                className={`flex flex-col text-left leading-tight whitespace-nowrap delay-150 ${revealBase} ${revealExpanded} group-data-[collapsible=icon]:hidden`}
               >
                 <span className="text-sm font-medium">{name}</span>
                 <span className="text-xs text-muted-foreground">{role}</span>

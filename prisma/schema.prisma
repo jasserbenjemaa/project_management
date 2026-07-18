@@ -6,7 +6,6 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-
 model User {
   id              String       @id @default(uuid())
   name            String
@@ -103,7 +102,7 @@ enum Artifact {
   ARCHITECTURE
   }
 
-enum Level{
+enum Level {
   JUNIOR
   MID
   SENIOR

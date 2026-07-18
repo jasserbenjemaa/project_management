@@ -19,9 +19,7 @@ export default function DashboardLayout({
             <SidebarTrigger />
           </div>
           <main className="flex-1 flex flex-col h-full overflow-hidden bg-muted/20">
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-              {children}
-            </div>
+            {children}
           </main>
         </SidebarInset>
       </SidebarProvider>
