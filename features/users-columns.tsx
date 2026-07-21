@@ -5,26 +5,48 @@ import { ArrowUpDown, PencilIcon, TrashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import type { Role, Level, Artifact } from "@/app/generated/prisma/enums";
+import { Prisma } from "@/app/generated/prisma/client";
 
-// --- Types -----------------------------------------------------------------
-// These line up 1:1 with the Prisma schema's enums (Role, Level, Artifact).
-export type UserRole = "UNIT_MANAGER" | "PEOPLE_MANAGER" | "CONSULTANT";
-export type SeniorityLevel = "JUNIOR" | "MID" | "SENIOR" | "EXPERT";
-export type ArtifactType =
-  | "HLT"
-  | "LLT"
-  | "LLR"
-  | "CODE_REVIEW"
-  | "ARCHITECTURE";
+// --- Types -------------------------------------------------------------
+// Pulled straight from the generated Prisma client (not hand-duplicated)
+// so this file can never drift out of sync with prisma/schema.prisma.
+export type UserRole = Role;
+export type SeniorityLevel = Level;
+export type ArtifactType = Artifact;
 
 export type UserProjectRef = {
   id: string;
   name: string;
 };
 
-// This is the shape the table expects. Build it server-side by including
-// `assignments.project` and `manager` on your Prisma `user.findMany` call,
-// then map each row down to this shape before passing it to <UsersView />.
+// The exact `select` used everywhere we read users (see `users-data.ts`).
+// Deliberately a `select`, not an `include`: `include` would also return
+// every scalar field - including `password` - which we never want to send
+// to the client. Keep this in sync with `UserRow`/`mapUserToRow` below.
+export const userRowSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  seniority_level: true,
+  artifact_type: true,
+  manager: { select: { id: true, name: true } },
+  assignments: {
+    select: {
+      id: true,
+      roleOnProject: true,
+      startDate: true,
+      project: { select: { id: true, name: true } },
+    },
+  },
+} satisfies Prisma.UserSelect;
+
+export type UserWithRelations = Prisma.UserGetPayload<{
+  select: typeof userRowSelect;
+}>;
+
+// This is the shape the table (and the edit form) expect.
 export type UserRow = {
   id: string;
   name: string;
@@ -33,10 +55,46 @@ export type UserRow = {
   seniority_level: SeniorityLevel | null;
   artifact_type: ArtifactType | null;
   manager: { id: string; name: string } | null;
-  projects: UserProjectRef[]; // derived from user.assignments[].project
+  projects: UserProjectRef[]; // every project this user is assigned to
+  // A user can technically have multiple Assignments, but the "New/Edit
+  // user" dialog only manages one at a time for simplicity. We treat the
+  // first assignment as the "primary" one for prefilling that form. If you
+  // need full multi-project assignment management, build a dedicated
+  // Assignments table/page instead of extending this dialog.
+  primaryAssignment: {
+    id: string;
+    projectId: string;
+    roleOnProject: string;
+    startDate: string; // ISO date string
+  } | null;
 };
 
+export function mapUserToRow(user: UserWithRelations): UserRow {
+  const [primary] = user.assignments;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    seniority_level: user.seniority_level,
+    artifact_type: user.artifact_type,
+    manager: user.manager,
+    projects: user.assignments.map((a) => a.project),
+    primaryAssignment: primary
+      ? {
+          id: primary.id,
+          projectId: primary.project.id,
+          roleOnProject: primary.roleOnProject,
+          startDate: primary.startDate.toISOString(),
+        }
+      : null,
+  };
+}
+
 // --- Display config ----------------------------------------------------------
+// `Record<UserRole, ...>` etc. below means TypeScript will now error if the
+// Role/Level/Artifact enums in schema.prisma ever gain or lose a value and
+// this config isn't updated to match.
 export const ROLE_CONFIG: Record<
   UserRole,
   { label: string; className: string }

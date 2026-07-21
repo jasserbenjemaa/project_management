@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
+import { signOut, getAuthUser } from "@/app/actions/auth";
 import {
   LogOut,
   Home,
@@ -38,14 +38,10 @@ const navItems = [
   { linkTo: "/", icon: Home, name: "Home" },
   { linkTo: "/projects", icon: FolderOpen, name: "Projects" },
   { linkTo: "/people-manager", icon: User, name: "People Manager" },
-  { linkTo: "/consaltants", icon: Users, name: "Consultants" },
+  { linkTo: "/users?role=CONSULTANT", icon: Users, name: "Consultants" },
   { linkTo: "/kpi", icon: ChartColumnBig, name: "KPIs" },
 ];
 
-// Shared transition for elements that fade + slide in from the left when
-// the sidebar expands. IMPORTANT: we use w-0/overflow-hidden instead of
-// `hidden` (display:none) when collapsed, because elements can't transition
-// out of display:none — they'd just pop in instantly instead of animating.
 const revealBase =
   "opacity-0 -translate-x-2 overflow-hidden transition-all duration-300 ease-out " +
   "group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:-translate-x-2 " +
@@ -57,7 +53,6 @@ export function NavSidebar({ name, role }: AppSidebarProps) {
   const { state, toggleSidebar } = useSidebar();
   const pathname = usePathname();
   const isExpanded = state === "expanded";
-
   const handleIconClick = () => {
     if (!isExpanded) {
       toggleSidebar();
@@ -180,6 +175,7 @@ export function NavSidebar({ name, role }: AppSidebarProps) {
             >
               <button
                 type="button"
+                onClick={async () => signOut()}
                 className="relative flex items-center justify-center rounded-md p-2 text-muted-foreground transition-colors duration-200 ease-out hover:bg-accent hover:text-foreground"
                 aria-label="Log out"
               >

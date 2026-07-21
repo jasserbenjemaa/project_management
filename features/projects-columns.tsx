@@ -4,39 +4,42 @@ import { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, PencilIcon, TrashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+// Import the actual generated type instead of hand-declaring a copy, so this
+// never drifts out of sync with schema.prisma / the Prisma client output.
+// This is the lightweight "enums" entrypoint, safe to use in client components.
+import type { ProjectStatus } from "@/app/generated/prisma/enums";
 
-export type ProjectStatus =
-  | "not_started"
-  | "in_progress"
-  | "completed"
-  | "on_hold";
+export type { ProjectStatus };
 
+// Mirrors the Project model in schema.prisma. Dates are passed down as
+// ISO strings from the server (Server Components / Server Actions).
 export type Project = {
   id: string;
   name: string;
   status: ProjectStatus;
-  dueDate: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-const STATUS_CONFIG: Record<
+export const STATUS_CONFIG: Record<
   ProjectStatus,
   { label: string; className: string }
 > = {
-  not_started: {
-    label: "Not Started",
+  PLANNED: {
+    label: "Planned",
     className: "bg-gray-100 text-gray-700 hover:bg-gray-100",
   },
-  in_progress: {
-    label: "In Progress",
+  ACTIVE: {
+    label: "Active",
     className: "bg-blue-100 text-blue-700 hover:bg-blue-100",
   },
-  completed: {
-    label: "Completed",
-    className: "bg-green-100 text-green-700 hover:bg-green-100",
-  },
-  on_hold: {
+  ON_HOLD: {
     label: "On Hold",
     className: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
+  },
+  COMPLETED: {
+    label: "Completed",
+    className: "bg-green-100 text-green-700 hover:bg-green-100",
   },
 };
 
@@ -90,7 +93,7 @@ export const getColumns = ({
     filterFn: (row, id, value) => value.includes(row.getValue(id)),
   },
   {
-    accessorKey: "dueDate",
+    accessorKey: "createdAt",
     header: ({ column }) => {
       return (
         <Button
@@ -99,19 +102,19 @@ export const getColumns = ({
           className="-ml-3"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Due Date
+          Created
           <ArrowUpDown className="ml-2 size-3.5" />
         </Button>
       );
     },
     cell: ({ row }) => (
       <span className="text-muted-foreground">
-        {formatDate(row.getValue("dueDate"))}
+        {formatDate(row.getValue("createdAt"))}
       </span>
     ),
     sortingFn: (a, b) =>
-      new Date(a.original.dueDate).getTime() -
-      new Date(b.original.dueDate).getTime(),
+      new Date(a.original.createdAt).getTime() -
+      new Date(b.original.createdAt).getTime(),
   },
   {
     id: "actions",

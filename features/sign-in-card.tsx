@@ -33,7 +33,7 @@ export function SignInCard() {
       const result = await signIn(formData);
       if (result.success) {
         toast.success("Logged in successfully");
-        router.push("/home");
+        router.push("/");
       }
       return result;
     } catch (e) {

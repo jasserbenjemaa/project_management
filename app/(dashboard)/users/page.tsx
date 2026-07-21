@@ -1,9 +1,15 @@
-"use client";
-
+// Server Component - no "use client" here. Move this file to wherever your
+// actual /users route lives in the app router if it isn't app/users/page.tsx.
 import { UsersView } from "@/components/users-view";
-import { MOCK_USERS, MOCK_PROJECTS } from "./mock-data";
+import { getProjects, getUserOptions, getUsers } from "@/lib/dal";
 
-export default function UsersPage() {
+export default async function UsersPage() {
+  const [users, projects, userOptions] = await Promise.all([
+    getUsers(),
+    getProjects(),
+    getUserOptions(),
+  ]);
+
   return (
     <main>
       <div className="flex-1 p-6 flex flex-col gap-6">
@@ -13,7 +19,11 @@ export default function UsersPage() {
             Browse, search, and manage all the users in one place.
           </p>
         </div>
-        <UsersView users={MOCK_USERS} projects={MOCK_PROJECTS} />;
+        <UsersView
+          users={users}
+          projects={projects}
+          userOptions={userOptions}
+        />
       </div>
     </main>
   );

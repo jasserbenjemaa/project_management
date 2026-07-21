@@ -1,7 +1,13 @@
 "use server";
 
 import { z } from "zod";
-import { createSession, deleteSession, verifyPassword } from "@/lib/auth";
+import {
+  createSession,
+  deleteSession,
+  verifyPassword,
+  getSession,
+} from "@/lib/auth";
+import { db } from "@/lib/db";
 import { getUserByEmail } from "@/lib/dal";
 import { redirect } from "next/navigation";
 
@@ -44,4 +50,18 @@ export async function signIn(formData: FormData): Promise<ActionResponse> {
 export async function signOut() {
   await deleteSession();
   redirect("/sign-in");
+}
+export async function getAuthUser() {
+  try {
+    const session = await getSession();
+    const id = session?.userId;
+    if (!session) return null;
+    const data = db.user.findUnique({
+      where: { id },
+      select: { id: true, name: true, role: true },
+    });
+    return data;
+  } catch (e) {
+    console.log("error in getting auth user:", e);
+  }
 }

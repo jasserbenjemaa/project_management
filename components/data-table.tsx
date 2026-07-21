@@ -25,7 +25,7 @@ import {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
-  // Rows per page. Defaults to 8.
+  // Rows per page. Defaults to 7.
   pageSize?: number;
 }
 

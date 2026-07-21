@@ -1,7 +1,9 @@
-import { Project } from "@/features/projects-columns";
 import { ProjectsView } from "@/components/projects-view";
+import { getProjects } from "@/app/actions/projects";
 
-const ProjectsPage = () => {
+const ProjectsPage = async () => {
+  const projects = await getProjects();
+
   return (
     <main>
       <div className="flex-1 p-6 flex flex-col gap-6">
@@ -11,7 +13,7 @@ const ProjectsPage = () => {
             Browse, search, and manage all your projects in one place.
           </p>
         </div>
-        <ProjectsView projects={[]} />
+        <ProjectsView projects={projects} />
       </div>
     </main>
   );

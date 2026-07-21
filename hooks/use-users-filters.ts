@@ -27,8 +27,12 @@ export type RoleFilter = (typeof USER_ROLES)[number];
  *   const [filters, setFilters] = useUsersFilters();
  *   filters.search      -> string
  *   filters.role        -> RoleFilter
- *   filters.projectId    -> string ("all" | Project.id)
- *   filters.artifact     -> ArtifactTab (drives the active Tab)
+ *   filters.projectId   -> string ("all" | Project.id) — the URL always
+ *                           stores the project's *id*; look up its name
+ *                           from your `projects` list when you need to
+ *                           display it (the filter <Select> already does
+ *                           this automatically).
+ *   filters.artifact    -> ArtifactTab (drives the active Tab)
  *
  *   setFilters({ search: "jane" })                 // updates ?search=jane
  *   setFilters({ role: "CONSULTANT", search: "" })  // batches multiple params in one push

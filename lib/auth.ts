@@ -33,7 +33,7 @@ export async function createUser(
         managerId,
       },
     });
-    return { id: user.id, email: user.email };
+    return { id: user.id, email: user.email, name: user.name, role: user.role };
   } catch (e) {
     console.log("error in creating a user: ", e);
     return null;

@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client"
   output   = "../app/generated/prisma"
@@ -42,7 +43,7 @@ model Task {
   estimatedDays Float?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
-  project       Project     @relation(fields: [projectId], references: [id])
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   timeEntries   TimeEntry[]
 }
 
@@ -54,7 +55,7 @@ model TimeEntry {
   loggedAt  DateTime @default(now())
   note      String?
   createdAt DateTime @default(now())
-  task      Task     @relation(fields: [taskId], references: [id])
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])
 }
 
@@ -68,7 +69,7 @@ model Assignment {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   assignedBy    User     @relation("AssignedBy", fields: [assignedById], references: [id])
-  project       Project  @relation(fields: [projectId], references: [id])
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user          User     @relation("AssignedUser", fields: [userId], references: [id])
 
   @@unique([userId, projectId])
@@ -108,3 +109,4 @@ enum Level {
   SENIOR
   EXPERT
 }
+
