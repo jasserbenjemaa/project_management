@@ -13,7 +13,7 @@ export const ARTIFACT_TABS = [
 export const USER_ROLES = [
   "all",
   "UNIT_MANAGER",
-  "PEOPLE_MANAGER",
+  "ENGAGEMENT_MANAGER",
   "CONSULTANT",
 ] as const;
 

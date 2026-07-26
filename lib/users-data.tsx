@@ -14,7 +14,6 @@ export const userRowSelect = {
   role: true,
   seniority_level: true,
   artifact_type: true,
-  manager: { select: { id: true, name: true } },
   assignments: {
     select: {
       id: true,
@@ -36,7 +35,6 @@ export type UserRow = {
   role: UserRole;
   seniority_level: SeniorityLevel | null;
   artifact_type: ArtifactType | null;
-  manager: { id: string; name: string } | null;
   projects: UserProjectRef[];
   primaryAssignment: {
     id: string;
@@ -55,7 +53,6 @@ export function mapUserToRow(user: UserWithRelations): UserRow {
     role: user.role,
     seniority_level: user.seniority_level,
     artifact_type: user.artifact_type,
-    manager: user.manager,
     projects: user.assignments.map((a) => a.project),
     primaryAssignment: primary
       ? {

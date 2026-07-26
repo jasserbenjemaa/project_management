@@ -31,7 +31,6 @@ export const userRowSelect = {
   role: true,
   seniority_level: true,
   artifact_type: true,
-  manager: { select: { id: true, name: true } },
   assignments: {
     select: {
       id: true,
@@ -54,7 +53,6 @@ export type UserRow = {
   role: UserRole;
   seniority_level: SeniorityLevel | null;
   artifact_type: ArtifactType | null;
-  manager: { id: string; name: string } | null;
   projects: UserProjectRef[]; // every project this user is assigned to
   // A user can technically have multiple Assignments, but the "New/Edit
   // user" dialog only manages one at a time for simplicity. We treat the
@@ -78,7 +76,6 @@ export function mapUserToRow(user: UserWithRelations): UserRow {
     role: user.role,
     seniority_level: user.seniority_level,
     artifact_type: user.artifact_type,
-    manager: user.manager,
     projects: user.assignments.map((a) => a.project),
     primaryAssignment: primary
       ? {
@@ -103,8 +100,8 @@ export const ROLE_CONFIG: Record<
     label: "Unit Manager",
     className: "bg-purple-100 text-purple-700 hover:bg-purple-100",
   },
-  PEOPLE_MANAGER: {
-    label: "People Manager",
+  ENGAGEMENT_MANAGER: {
+    label: "Engagement Manager",
     className: "bg-blue-100 text-blue-700 hover:bg-blue-100",
   },
   CONSULTANT: {
@@ -277,18 +274,7 @@ export const getUserColumns = ({
     filterFn: (row, id, value: string) =>
       value === "all" || row.getValue(id) === value,
   },
-  {
-    accessorKey: "manager",
-    header: "Manager",
-    cell: ({ row }) => {
-      const manager = row.original.manager;
-      return manager ? (
-        <span>{manager.name}</span>
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      );
-    },
-  },
+
   {
     id: "projects",
     header: "Projects",

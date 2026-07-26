@@ -77,7 +77,7 @@ model Assignment {
 
 enum Role {
   UNIT_MANAGER
-  PEOPLE_MANAGER
+  ENGAGEMENT_MANAGER
   CONSULTANT
 }
 

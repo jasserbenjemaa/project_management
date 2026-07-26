@@ -17,10 +17,10 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 // tune these however you like — they currently total 100 users / 10 projects
-const NUM_UNIT_MANAGERS = 10;
-const NUM_PEOPLE_MANAGERS = 20;
-const NUM_CONSULTANTS = 70;
-const NUM_PROJECTS = 10;
+const NUM_UNIT_MANAGERS = 1;
+const NUM_ENGAGEMENT_MANAGERS = 2;
+const NUM_CONSULTANTS = 7;
+const NUM_PROJECTS = 2;
 const TASKS_PER_PROJECT = 6;
 
 const ARTIFACT_LABELS = ["HLT", "LLT", "LLR", "Code review", "Architecture"];
@@ -56,15 +56,15 @@ async function main() {
     );
   }
 
-  // 3. people managers — each reports to a random unit manager
-  const peopleManagers = [];
-  for (let i = 0; i < NUM_PEOPLE_MANAGERS; i++) {
-    peopleManagers.push(
+  // 3. engagement managers — each reports to a random unit manager
+  const engagementManagers = [];
+  for (let i = 0; i < NUM_ENGAGEMENT_MANAGERS; i++) {
+    engagementManagers.push(
       await prisma.user.create({
         data: {
           name: faker.person.fullName(),
-          email: `people.manager.${i}@company.com`,
-          role: Role.PEOPLE_MANAGER,
+          email: `engagement.manager.${i}@company.com`,
+          role: Role.ENGAGEMENT_MANAGER,
           password: passwordHash,
           managerId: pick(unitManagers).id,
         },
@@ -72,7 +72,7 @@ async function main() {
     );
   }
 
-  // 4. consultants — each reports to a random people manager. seniority_level and
+  // 4. consultants — each reports to a random engagement manager. seniority_level and
   //    artifact_type are set here only (they're the "what they work on / how senior"
   //    attributes from your spec) — remove if you want managers to have them too.
   const consultantLevels = Object.values(Level);
@@ -86,7 +86,7 @@ async function main() {
           email: `consultant.${i}@company.com`,
           role: Role.CONSULTANT,
           password: passwordHash,
-          managerId: pick(peopleManagers).id,
+          managerId: pick(engagementManagers).id,
           seniority_level: pick(consultantLevels),
           artifact_type: pick(artifactTypes),
         },
@@ -94,7 +94,7 @@ async function main() {
     );
   }
 
-  const staff = [...peopleManagers, ...consultants];
+  const staff = [...engagementManagers, ...consultants];
 
   // 5. projects
   const projectStatuses = Object.values(ProjectStatus);
@@ -135,7 +135,7 @@ async function main() {
     }
   }
 
-  // 7. assignments — every people manager / consultant staffed on exactly one project
+  // 7. assignments — every engagement manager / consultant staffed on exactly one project
   //    (keeps the "one user, one project" rule), plus a few time entries per assignment
   //    so KPI has something to be computed from.
   for (const user of faker.helpers.shuffle(staff)) {
@@ -148,7 +148,9 @@ async function main() {
         projectId: project.id,
         assignedById: assignedBy.id,
         roleOnProject:
-          user.role === Role.PEOPLE_MANAGER ? "People manager" : "Consultant",
+          user.role === Role.ENGAGEMENT_MANAGER
+            ? "Engagement manager"
+            : "Consultant",
         startDate: faker.date.recent({ days: 90 }),
       },
     });
@@ -169,7 +171,7 @@ async function main() {
   }
 
   console.log(
-    `Seeded ${unitManagers.length + peopleManagers.length + consultants.length} users and ${projects.length} projects.`,
+    `Seeded ${unitManagers.length + engagementManagers.length + consultants.length} users and ${projects.length} projects.`,
   );
 }
 

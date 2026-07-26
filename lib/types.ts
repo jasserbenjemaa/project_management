@@ -1,8 +1,8 @@
-export type Role = "UNIT_MANAGER" | "PEOPLE_MANAGER" | "CONSULTANT";
+export type Role = "UNIT_MANAGER" | "ENGAGEMENT_MANAGER" | "CONSULTANT";
 export type TaskStatus = "BLOCKED" | "TODO" | "IN_PROGRESS" | "DONE";
 export type ProjectStatus = "PLANNED" | "ACTIVE" | "ON_HOLD" | "COMPLETED";
 
-export type UserRole = "UNIT_MANAGER" | "PEOPLE_MANAGER" | "CONSULTANT";
+export type UserRole = "UNIT_MANAGER" | "ENGAGEMENT_MANAGER" | "CONSULTANT";
 
 export type SeniorityLevel = "JUNIOR" | "MID" | "SENIOR" | "EXPERT";
 

@@ -37,7 +37,11 @@ interface AppSidebarProps {
 const navItems = [
   { linkTo: "/", icon: Home, name: "Home" },
   { linkTo: "/projects", icon: FolderOpen, name: "Projects" },
-  { linkTo: "/people-manager", icon: User, name: "People Manager" },
+  {
+    linkTo: "/users?role=ENGAGEMENT_MANAGER",
+    icon: User,
+    name: "Engagement Manager",
+  },
   { linkTo: "/users?role=CONSULTANT", icon: Users, name: "Consultants" },
   { linkTo: "/kpi", icon: ChartColumnBig, name: "KPIs" },
 ];
@@ -49,9 +53,11 @@ const revealBase =
 const revealExpanded =
   "group-data-[state=expanded]:opacity-100 group-data-[state=expanded]:translate-x-0";
 
-export function NavSidebar({ name, role }: AppSidebarProps) {
+export function NavSidebar(props: AppSidebarProps) {
   const { state, toggleSidebar } = useSidebar();
   const pathname = usePathname();
+  const name = props.name ? props.name : "gust";
+  const role = props.role ? props.role : "gust";
   const isExpanded = state === "expanded";
   const handleIconClick = () => {
     if (!isExpanded) {
@@ -166,7 +172,9 @@ export function NavSidebar({ name, role }: AppSidebarProps) {
                 className={`flex flex-col text-left leading-tight whitespace-nowrap delay-150 ${revealBase} ${revealExpanded} group-data-[collapsible=icon]:hidden`}
               >
                 <span className="text-sm font-medium">{name}</span>
-                <span className="text-xs text-muted-foreground">{role}</span>
+                <span className="text-[0.6rem] text-muted-foreground">
+                  {role.toLowerCase()}
+                </span>
               </div>
             </SidebarMenuButton>
 

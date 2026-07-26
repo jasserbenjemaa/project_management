@@ -39,7 +39,7 @@ const Home = () => {
       description: "projects status",
     },
     {
-      linkTo: "/users?role=UNIT_MANAGER",
+      linkTo: "/users?role=ENGAGEMENT_MANAGER",
       imageUrl: "/campgemini_values/boldness.svg",
       icon: User,
       name: "Engagement manager",
