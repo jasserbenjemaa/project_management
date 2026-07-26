@@ -4,7 +4,7 @@ import { Geist, Geist_Mono, Inter, Roboto } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "sonner";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import "@glideapps/glide-data-grid/dist/index.css";
 
 const robotoHeading = Roboto({
   subsets: ["latin"],
@@ -47,7 +47,10 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        <NuqsAdapter>{children}</NuqsAdapter>
+        <NuqsAdapter>
+          {children}
+          <div id="portal" />
+        </NuqsAdapter>
         <Toaster position="top-center" />
       </body>
     </html>

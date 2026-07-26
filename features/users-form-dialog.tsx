@@ -82,7 +82,6 @@ export function UserFormDialog({
   onOpenChange,
   user,
   projects,
-  userOptions,
   defaultValues,
   onSaved,
 }: UserFormDialogProps) {
@@ -123,6 +122,9 @@ export function UserFormDialog({
 
   // Seniority only means something for consultants - clear it whenever the
   // role changes to anything else so a stale value can't get submitted.
+  const roleEntries = Object.entries(ROLE_CONFIG).filter(
+    ([role]) => role !== "UNIT_MANAGER" || user?.role === "UNIT_MANAGER",
+  );
   const handleRoleChange = (v: Role) => {
     setForm({
       ...form,
@@ -236,7 +238,7 @@ export function UserFormDialog({
                 <SelectValue placeholder="Select a role" />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(ROLE_CONFIG).map(([role, config]) => (
+                {roleEntries.map(([role, config]) => (
                   <SelectItem key={role} value={role}>
                     {config.label}
                   </SelectItem>

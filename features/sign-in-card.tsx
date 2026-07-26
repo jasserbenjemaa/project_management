@@ -1,4 +1,5 @@
 "use client";
+import { Eye, EyeOff } from "lucide-react";
 import { DottedSeparator } from "@/components/dotted-separator";
 import {
   Card,
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { signIn, type ActionResponse } from "@/app/actions/auth";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
 const initialState: ActionResponse = {
@@ -25,6 +26,7 @@ const initialState: ActionResponse = {
 
 export function SignInCard() {
   const router = useRouter();
+  const [showPassword, setShowPassword] = useState(false);
   const [state, formAction, isPending] = useActionState<
     ActionResponse,
     FormData
@@ -64,12 +66,6 @@ export function SignInCard() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-6">
-            {state?.message && !state.success && (
-              <p className="text-sm text-red-500" role="alert">
-                {state.message}
-              </p>
-            )}
-
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -83,32 +79,50 @@ export function SignInCard() {
                 aria-describedby="email-error"
                 className={`h-9 ${state?.errors?.email ? "border-red-500" : ""}`}
               />
-              {state?.errors?.email && (
-                <p id="email-error" className="text-sm text-red-500">
-                  {state.errors.email[0]}
-                </p>
-              )}
             </div>
-
             <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                autoComplete="current-password"
-                disabled={isPending}
-                placeholder="enter your password"
-                aria-describedby="password-error"
-                className={`h-9 ${state?.errors?.password ? "border-red-500" : ""}`}
-              />
+
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  disabled={isPending}
+                  placeholder="Enter your password"
+                  aria-describedby="password-error"
+                  className={`h-9 pr-10 ${
+                    state?.errors?.password ? "border-red-500" : ""
+                  }`}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+
               {state?.errors?.password && (
                 <p id="password-error" className="text-sm text-red-500">
                   {state.errors.password[0]}
                 </p>
               )}
             </div>
+            {state?.errors?.email && (
+              <p id="email-error" className="text-sm text-red-500">
+                {state.errors.email[0]}
+              </p>
+            )}
           </div>
         </CardContent>
         <CardFooter className="flex-col gap-2">

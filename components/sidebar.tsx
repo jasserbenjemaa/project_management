@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, getAuthUser } from "@/app/actions/auth";
+import { signOut } from "@/app/actions/auth";
 import {
   LogOut,
   Home,
@@ -10,6 +10,7 @@ import {
   Users,
   ChartColumnBig,
   PanelLeftOpen,
+  TableProperties,
   PanelRightOpen,
 } from "lucide-react";
 
@@ -43,6 +44,11 @@ const navItems = [
     name: "Engagement Manager",
   },
   { linkTo: "/users?role=CONSULTANT", icon: Users, name: "Consultants" },
+  {
+    linkTo: "/progress-sheet",
+    icon: TableProperties,
+    name: "Progress Table",
+  },
   { linkTo: "/kpi", icon: ChartColumnBig, name: "KPIs" },
 ];
 
