@@ -119,12 +119,6 @@ export async function updateUser(
       },
     });
 
-    // Upsert the single "primary" assignment for this user (see the note on
-    // `UserRow.primaryAssignment`). A user with multiple Assignments will
-    // only have the first one touched here. Role-on-project and start date
-    // are no longer collected by the form, so they default to the user's
-    // role and "now" respectively; existing values are left untouched on
-    // update unless the project itself changes.
     const existing = await db.assignment.findFirst({ where: { userId } });
 
     if (input.projectId) {
@@ -133,8 +127,6 @@ export async function updateUser(
           where: { id: existing.id },
           data: {
             projectId: input.projectId,
-            // Whoever is signed in and performing this reassignment is
-            // recorded as having made it.
             ...(existing.projectId !== input.projectId
               ? {
                   roleOnProject: input.role,
@@ -169,24 +161,13 @@ export async function updateUser(
 export async function deleteUser(userId: string): Promise<ActionResult> {
   try {
     await db.$transaction([
-      // 1. Detach direct reports so the delete doesn't violate the
-      //    self-referencing manager FK.
-      //    NOTE: this assumes User.managerId is nullable. If it's actually
-      //    required in your schema, this needs to become "reassign each
-      //    direct report to a specific new manager" instead of null - as
-      //    written, that case will throw a Prisma validation error here
-      //    rather than silently corrupting data.
       db.user.updateMany({
         where: { managerId: userId },
         data: { managerId: null },
       }),
-      // 2. Delete this user's project assignments.
       db.assignment.deleteMany({ where: { userId } }),
-      // 3. Hard-delete this user's time entries. IRREVERSIBLE - this
-      //    permanently destroys historical/billing data, confirmed
-      //    intentional.
+
       db.timeEntry.deleteMany({ where: { userId } }),
-      // 4. Finally, delete the user.
       db.user.delete({ where: { id: userId } }),
     ]);
 
@@ -195,4 +176,22 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
   } catch (error) {
     return formatError(error, "Failed to delete user.");
   }
+}
+
+export type UserSuggestion = {
+  id: string;
+  name: string;
+  artifactType: string | null;
+};
+export async function getUserSuggestions(): Promise<UserSuggestion[]> {
+  const users = await db.user.findMany({
+    select: { id: true, name: true, artifact_type: true },
+    orderBy: { name: "asc" },
+  });
+
+  return users.map((u) => ({
+    id: u.id,
+    name: u.name,
+    artifactType: u.artifact_type,
+  }));
 }

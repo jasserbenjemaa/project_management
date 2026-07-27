@@ -73,8 +73,8 @@ export function NavSidebar(props: AppSidebarProps) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="flex flex-col p-2 pt-5">
-        <div className="flex items-center justify-between group-data-[collapsible=icon]:justify-center px-3 pt-0.5">
+      <SidebarHeader className="flex flex-col pt-3">
+        <div className="flex items-center justify-between group-data-[collapsible=icon]:justify-center px-3">
           <button
             type="button"
             onClick={handleIconClick}
@@ -127,9 +127,9 @@ export function NavSidebar(props: AppSidebarProps) {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="p-2 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:pl-0.5">
+      <SidebarContent className=" group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:pl-0.5">
         <SidebarGroup>
-          <DottedSeparator className="pb-2" />
+          <DottedSeparator className="pb-3" />
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item, index) => {

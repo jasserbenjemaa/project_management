@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import {
   DataEditor,
   GridCell,
@@ -14,9 +13,14 @@ import {
   CustomRenderer,
   getMiddleCenterBias,
   DrawArgs,
+  Rectangle,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
 
+// Adjust these import paths to wherever you put the action files.
+import { loadSheet, saveSheet } from "@/app/actions/sheet";
+import { getUserSuggestions, type UserSuggestion } from "@/app/actions/users";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 // ---- Types ----
 type RowData = Record<string, string>;
 
@@ -24,9 +28,6 @@ const TEST_STATUS_COL_ID = "testStatus";
 const TEST_STATUS_OPTIONS = ["OK", "KO"] as const;
 type TestStatusValue = "" | (typeof TEST_STATUS_OPTIONS)[number];
 
-// ---- Custom "Test Status" dropdown cell ----
-// Renders as a colored pill (green = OK, red = KO) and opens a small
-// dropdown overlay on click to change the value.
 interface TestStatusCellProps {
   readonly kind: "test-status-cell";
   readonly value: TestStatusValue;
@@ -43,7 +44,6 @@ const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
 
     ctx.save();
 
-    const paddingX = 8;
     const pillHeight = 22;
     const pillY = rect.y + (rect.height - pillHeight) / 2;
     const pillX = rect.x + 8;
@@ -116,84 +116,61 @@ const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
       const { value, onChange, onFinishedEditing } = p;
       const current = value.data.value;
 
+      const choose = (next: TestStatusValue) => {
+        const updated = { ...value, data: { ...value.data, value: next } };
+        onChange(updated);
+        onFinishedEditing(updated);
+      };
+
       return (
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
+            gap: 6,
+            padding: 8,
             background: "white",
             border: "1px solid #e5e7eb",
             borderRadius: 8,
             boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-            padding: 4,
-            minWidth: 100,
           }}
         >
-          {TEST_STATUS_OPTIONS.map((opt) => {
-            const isOk = opt === "OK";
-            const isSelected = current === opt;
-            return (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => {
-                  onChange({
-                    ...value,
-                    data: { ...value.data, value: opt },
-                  });
-                  onFinishedEditing({
-                    ...value,
-                    data: { ...value.data, value: opt },
-                  });
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  padding: "6px 10px",
-                  border: "none",
-                  borderRadius: 6,
-                  background: isSelected ? "#f3f4f6" : "transparent",
-                  color: isOk ? "#15803d" : "#b91c1c",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: isOk ? "#22c55e" : "#ef4444",
-                  }}
-                />
-                {opt}
-              </button>
-            );
-          })}
+          {TEST_STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                choose(opt);
+              }}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 999,
+                border:
+                  current === opt ? "2px solid #111827" : "1px solid #e5e7eb",
+                background: opt === "OK" ? "#dcfce7" : "#fee2e2",
+                color: opt === "OK" ? "#15803d" : "#b91c1c",
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              {opt}
+            </button>
+          ))}
           <button
             type="button"
-            onClick={() => {
-              onChange({ ...value, data: { ...value.data, value: "" } });
-              onFinishedEditing({
-                ...value,
-                data: { ...value.data, value: "" },
-              });
+            onMouseDown={(e) => {
+              e.preventDefault();
+              choose("");
             }}
             style={{
-              marginTop: 2,
               padding: "6px 10px",
-              border: "none",
-              borderRadius: 6,
+              borderRadius: 999,
+              border: "1px solid #e5e7eb",
               background: "transparent",
               color: "#6b7280",
               fontSize: 12,
               cursor: "pointer",
-              textAlign: "left",
             }}
           >
             Clear
@@ -209,10 +186,126 @@ const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
   }),
 };
 
-// ---- Column config ----
-// Columns that, when Test Status is "KO", should visually flag as
-// needing attention (IQA + Comment LLT). We don't force values into them,
-// we just make sure they're easy to spot / fill in.
+const AUTHOR_COL_ARTIFACT_TYPE: Record<string, string> = {
+  authorLLR: "LLR",
+  authorLLT: "LLT",
+};
+
+interface AuthorSuggestCellProps {
+  readonly kind: "author-suggest-cell";
+  readonly text: string;
+  readonly suggestions: readonly string[];
+}
+type AuthorSuggestCell = CustomCell<AuthorSuggestCellProps>;
+
+const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
+  kind: GridCellKind.Custom,
+  isMatch: (cell): cell is AuthorSuggestCell =>
+    (cell.data as any)?.kind === "author-suggest-cell",
+  draw: (args: DrawArgs<AuthorSuggestCell>) => {
+    const { ctx, theme, rect, cell } = args;
+    const { text } = cell.data;
+
+    ctx.save();
+    ctx.fillStyle = text ? theme.textDark : theme.textLight;
+    ctx.font = `13px ${theme.fontFamily}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      text || "Type a name…",
+      rect.x + 8,
+      rect.y + rect.height / 2,
+      rect.width - 16,
+    );
+    ctx.restore();
+    return true;
+  },
+  provideEditor: () => ({
+    editor: (p) => {
+      const { value, onChange, onFinishedEditing } = p;
+      const { text: initialText, suggestions } = value.data;
+      const [inputValue, setInputValue] = useState(initialText);
+      const inputRef = useRef<HTMLInputElement>(null);
+
+      useEffect(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, []);
+
+      const filtered = useMemo(() => {
+        const q = inputValue.trim().toLowerCase();
+        const pool = q
+          ? suggestions.filter((name) => name.toLowerCase().includes(q))
+          : suggestions;
+        return pool.slice(0, 8);
+      }, [inputValue, suggestions]);
+
+      const commit = (finalText: string) => {
+        const next = { ...value, data: { ...value.data, text: finalText } };
+        onChange(next);
+        onFinishedEditing(next);
+      };
+
+      return (
+        <div
+          style={{
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+            minWidth: 220,
+            overflow: "hidden",
+          }}
+        >
+          <input
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              onChange({
+                ...value,
+                data: { ...value.data, text: e.target.value },
+              });
+            }}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "8px 10px",
+              border: "none",
+              outline: "none",
+              fontSize: 13,
+            }}
+          />
+          {filtered.length > 0 && (
+            <div style={{ maxHeight: 176, overflowY: "auto" }}>
+              {filtered.map((name, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => commit(name)}
+                  type="button"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "6px 10px",
+                    border: "none",
+                    color: "#111827",
+                    fontSize: 13,
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    },
+    disablePadding: true,
+  }),
+  onPaste: (val, cellData) => ({ ...cellData, text: val }),
+};
+
 const KO_HIGHLIGHT_COL_IDS = new Set(["iqa", "commentLLT"]);
 
 const initialColumns: GridColumn[] = [
@@ -230,7 +323,7 @@ const initialColumns: GridColumn[] = [
   { title: "Status LLT (JJ/MM/AAAA)", id: "statusLLTDate", width: 180 },
 ];
 
-const initialData: RowData[] = [
+const seedData: RowData[] = [
   {
     priority: "1",
     llrId: "LLR-0001",
@@ -267,14 +360,188 @@ const emptySelection: GridSelection = {
   current: undefined,
 };
 
-const SheetTable = () => {
-  const [columns, setColumns] = React.useState<GridColumn[]>(initialColumns);
-  const [data, setData] = React.useState<RowData[]>(initialData);
-  const [selection, setSelection] =
-    React.useState<GridSelection>(emptySelection);
+// --- Infinite scroll helpers ---
+// We keep a buffer of blank rows past the last visible row so the sheet
+// never visibly "runs out" — as the user scrolls further down, more rows
+// are appended on the fly, similar to Excel/Google Sheets.
+const ROW_BUFFER = 60; // rows kept ready below what's currently visible
+const INITIAL_BUFFER = 80; // rows to pad with on first load
+
+const createEmptyRow = (cols: GridColumn[]): RowData => {
+  const row: RowData = {};
+  cols.forEach((c) => {
+    if (c.id) row[c.id] = "";
+  });
+  return row;
+};
+
+const buildInitialData = (): RowData[] => [
+  ...seedData,
+  ...Array.from({ length: INITIAL_BUFFER }, () =>
+    createEmptyRow(initialColumns),
+  ),
+];
+
+// --- Auto-size helpers (width AND height) ---
+// Columns grow to fit their widest value (up to a cap); once a value is
+// too long even for the widened column, the cell wraps onto multiple
+// lines and the row grows taller to fit that wrapped text. So content
+// is never clipped in either direction.
+const MIN_COL_WIDTH = 80;
+const MAX_COL_WIDTH = 420; // beyond this, text wraps + the row grows taller instead
+const CELL_TEXT_PADDING = 32; // left+right cell padding + a little slack
+const MEASURE_FONT = "13px system-ui, -apple-system, sans-serif";
+const MEASURE_FONT_BOLD = "600 13px system-ui, -apple-system, sans-serif";
+
+const LINE_HEIGHT = 18; // px per wrapped line at 13px font
+const ROW_VERTICAL_PADDING = 16; // top+bottom cell padding
+const MIN_ROW_HEIGHT = 34; // default single-line row height
+const MAX_ROW_HEIGHT = 220; // cap so one giant paragraph can't take over the sheet
+
+// Counts how many lines `text` would wrap onto inside `maxWidth`.
+const countWrappedLines = (
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): number => {
+  if (!text) return 1;
+  const availableWidth = Math.max(10, maxWidth - CELL_TEXT_PADDING);
+  let totalLines = 0;
+
+  text.split("\n").forEach((paragraph) => {
+    if (paragraph === "") {
+      totalLines += 1;
+      return;
+    }
+    const words = paragraph.split(" ");
+    let line = "";
+    let linesInParagraph = 0;
+
+    words.forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(candidate).width > availableWidth) {
+        linesInParagraph += 1;
+        line = word;
+      } else {
+        line = candidate;
+      }
+    });
+    linesInParagraph += 1; // final line in this paragraph
+    totalLines += linesInParagraph;
+  });
+
+  return Math.max(1, totalLines);
+};
+
+// How long to wait after the last edit before writing to the DB.
+const AUTOSAVE_DEBOUNCE_MS = 800;
+
+interface SheetTableProps {
+  // Identifies which Sheet row in Postgres this component reads/writes.
+  // Pass a stable id (e.g. from the URL: /sheets/[id]) — a fresh id if
+  // you're creating a new sheet, or the id of one you're re-opening.
+  sheetId: string;
+}
+
+const SheetTable = ({ sheetId }: SheetTableProps) => {
+  const [columns, setColumns] = useState<GridColumn[]>(initialColumns);
+  const [data, setData] = useState<RowData[]>(buildInitialData);
+  const [selection, setSelection] = useState<GridSelection>(emptySelection);
+
+  // Gate autosave until the initial load has resolved, so we don't
+  // immediately overwrite saved data with the default seed/buffer.
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+
+  // Users for the Author LLR / Author LLT autocomplete dropdowns. Fetched
+  // once — a project's user list doesn't change often enough to warrant
+  // refetching per keystroke or per cell.
+  const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUserSuggestions()
+      .then((users) => {
+        if (!cancelled) setUserSuggestions(users);
+      })
+      .catch((err) => console.error("Failed to load user suggestions", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Suggestions per author column: users tagged with the matching
+  // artifact_type, falling back to everyone if none are tagged yet.
+  const authorSuggestionsByCol = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    const allNames = userSuggestions.map((u) => u.name);
+
+    Object.entries(AUTHOR_COL_ARTIFACT_TYPE).forEach(
+      ([colId, artifactType]) => {
+        const matched = userSuggestions
+          .filter((u) => u.artifactType === artifactType)
+          .map((u) => u.name);
+        result[colId] = matched.length > 0 ? matched : allNames;
+      },
+    );
+
+    return result;
+  }, [userSuggestions]);
+
+  const measureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const getMeasureCtx = useCallback(() => {
+    if (typeof document === "undefined") return null;
+    if (!measureCanvasRef.current) {
+      measureCanvasRef.current = document.createElement("canvas");
+    }
+    return measureCanvasRef.current.getContext("2d");
+  }, []);
+
+  // --- Load saved data on mount ---
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const saved = await loadSheet(sheetId);
+        if (cancelled) return;
+
+        if (saved && saved.rows.length > 0) {
+          const loadedColumns: GridColumn[] =
+            saved.columns.length > 0
+              ? saved.columns.map((c) => ({
+                  title: c.title,
+                  id: c.id,
+                  width: c.width ?? 120,
+                }))
+              : initialColumns;
+
+          setColumns(loadedColumns);
+          setData([
+            ...saved.rows,
+            ...Array.from({ length: INITIAL_BUFFER }, () =>
+              createEmptyRow(loadedColumns),
+            ),
+          ]);
+        }
+        // If nothing saved yet, keep the default seed/buffer that's
+        // already in state — this becomes the first autosave.
+      } catch (err) {
+        console.error("Failed to load sheet", err);
+      } finally {
+        if (!cancelled) setIsLoaded(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetId]);
 
   // --- Read a cell ---
-  const getCellContent = React.useCallback(
+  const getCellContent = useCallback(
     (cell: Item): GridCell => {
       const [col, row] = cell;
       const colId = columns[col]?.id ?? "";
@@ -296,6 +563,20 @@ const SheetTable = () => {
         return testStatusCell;
       }
 
+      if (colId in AUTHOR_COL_ARTIFACT_TYPE) {
+        const authorCell: AuthorSuggestCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "author-suggest-cell",
+            text: value,
+            suggestions: authorSuggestionsByCol[colId] ?? [],
+          },
+        };
+        return authorCell;
+      }
+
       // Highlight IQA / Comment LLT cells red-tinted when this row's
       // Test Status is KO, so it's obvious they need attention.
       const isKORow = dataRow?.[TEST_STATUS_COL_ID] === "KO";
@@ -307,14 +588,17 @@ const SheetTable = () => {
         readonly: false,
         displayData: value,
         data: value,
+        // Lets long values wrap onto multiple lines instead of getting
+        // clipped once the column has hit its max width.
+        allowWrapping: true,
         themeOverride: shouldHighlight ? { bgCell: "#fef2f2" } : undefined,
-      };
+      } as GridCell;
     },
-    [columns, data],
+    [columns, data, authorSuggestionsByCol],
   );
 
   // --- Edit a cell ---
-  const onCellEdited = React.useCallback(
+  const onCellEdited = useCallback(
     (cell: Item, newValue: EditableGridCell) => {
       const [col, row] = cell;
       const colId = columns[col]?.id;
@@ -333,6 +617,19 @@ const SheetTable = () => {
         return;
       }
 
+      if (
+        colId in AUTHOR_COL_ARTIFACT_TYPE &&
+        newValue.kind === GridCellKind.Custom
+      ) {
+        const newText = (newValue.data as AuthorSuggestCellProps).text;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newText };
+          return next;
+        });
+        return;
+      }
+
       if (newValue.kind !== GridCellKind.Text) return;
 
       setData((prev) => {
@@ -344,29 +641,180 @@ const SheetTable = () => {
     [columns],
   );
 
-  // --- Add a new empty row ---
-  const addRow = React.useCallback(() => {
-    setData((prev) => {
-      const emptyRow: RowData = {};
-      columns.forEach((c) => {
-        if (c.id) emptyRow[c.id] = "";
+  // --- Keep topping up blank rows as the user scrolls down (infinite feel) ---
+  const onVisibleRegionChanged = useCallback(
+    (range: Rectangle) => {
+      const lastVisibleRow = range.y + range.height;
+      setData((prev) => {
+        if (lastVisibleRow + ROW_BUFFER / 2 < prev.length) return prev;
+        const rowsToAdd = lastVisibleRow + ROW_BUFFER - prev.length;
+        if (rowsToAdd <= 0) return prev;
+        return [
+          ...prev,
+          ...Array.from({ length: rowsToAdd }, () => createEmptyRow(columns)),
+        ];
       });
-      return [...prev, emptyRow];
-    });
-  }, [columns]);
-
-  // --- Column resize ---
-  const onColumnResize = React.useCallback(
-    (column: GridColumn, newSize: number) => {
-      setColumns((prev) =>
-        prev.map((c) => (c.id === column.id ? { ...c, width: newSize } : c)),
-      );
     },
-    [],
+    [columns],
+  );
+
+  // --- Column resize (manual drag) ---
+  const onColumnResize = useCallback((column: GridColumn, newSize: number) => {
+    setColumns((prev) =>
+      prev.map((c) => (c.id === column.id ? { ...c, width: newSize } : c)),
+    );
+  }, []);
+
+  // Only rows that actually have content matter for sizing (and saving) —
+  // the infinite blank buffer below them shouldn't be measured on every
+  // scroll-append, nor written to the database.
+  // Original row index is kept so heights can be looked up by row number.
+  const filledRowEntries = useMemo(
+    () =>
+      data
+        .map((row, idx) => ({ idx, row }))
+        .filter(({ row }) => Object.values(row).some((v) => v)),
+    [data],
+  );
+  const filledRows = useMemo(
+    () => filledRowEntries.map((e) => e.row),
+    [filledRowEntries],
+  );
+
+  const columnIds = useMemo(
+    () => columns.map((c) => c.id).join("|"),
+    [columns],
+  );
+
+  // Widths change on manual resize/auto-grow without changing columnIds,
+  // so we need a separate signature to trigger autosave on width changes.
+  const columnsSignature = useMemo(
+    () => columns.map((c) => `${c.id}:${c.width ?? ""}`).join("|"),
+    [columns],
+  );
+
+  // --- Autosave: debounced write to Postgres whenever content settles ---
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!isLoaded) return; // don't save while the initial buffer is still in place
+
+    setSaveStatus("saving");
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveSheet(
+          sheetId,
+          columns
+            .filter((c) => c.id)
+            .map((c) => ({
+              id: c.id as string,
+              title: String(c.title ?? ""),
+              width: c.width,
+            })),
+          filledRows,
+        );
+        setSaveStatus("saved");
+      } catch (err) {
+        console.error("Failed to save sheet", err);
+        setSaveStatus("error");
+      }
+    }, AUTOSAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filledRows, columnsSignature, columnIds, isLoaded, sheetId]);
+
+  // --- Auto-grow every column so its content (and header) is never clipped ---
+  useEffect(() => {
+    const ctx = getMeasureCtx();
+    if (!ctx) return;
+
+    const desiredWidths: Record<string, number> = {};
+
+    columns.forEach((col) => {
+      if (!col.id) return;
+
+      // The Test Status column is a fixed-shape pill, not free text.
+      if (col.id === TEST_STATUS_COL_ID) return;
+
+      ctx.font = MEASURE_FONT_BOLD;
+      let widest = ctx.measureText(col.title).width;
+
+      ctx.font = MEASURE_FONT;
+      filledRows.forEach((row) => {
+        const value = row[col.id as string];
+        if (!value) return;
+        const w = ctx.measureText(value).width;
+        if (w > widest) widest = w;
+      });
+
+      desiredWidths[col.id] = Math.min(
+        MAX_COL_WIDTH,
+        Math.max(MIN_COL_WIDTH, Math.ceil(widest) + CELL_TEXT_PADDING),
+      );
+    });
+
+    setColumns((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (!c.id) return c;
+        const desired = desiredWidths[c.id];
+        if (desired !== undefined && desired > (c.width ?? 0)) {
+          changed = true;
+          return { ...c, width: desired };
+        }
+        return c;
+      });
+      return changed ? next : prev;
+    });
+    // Re-run only when the actual content or the set of columns changes —
+    // not on every manual resize or every blank row appended.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filledRows, columnIds, getMeasureCtx]);
+
+  // --- Auto-grow each row so wrapped text is never clipped vertically ---
+  const rowHeightMap = useMemo(() => {
+    const ctx = getMeasureCtx();
+    const map = new Map<number, number>();
+    if (!ctx) return map;
+
+    filledRowEntries.forEach(({ idx, row }) => {
+      let maxLines = 1;
+      ctx.font = MEASURE_FONT;
+
+      columns.forEach((col) => {
+        if (!col.id || col.id === TEST_STATUS_COL_ID) return;
+        const value = row[col.id];
+        if (!value) return;
+        const lines = countWrappedLines(ctx, value, col.width ?? MIN_COL_WIDTH);
+        if (lines > maxLines) maxLines = lines;
+      });
+
+      if (maxLines > 1) {
+        map.set(
+          idx,
+          Math.min(
+            MAX_ROW_HEIGHT,
+            maxLines * LINE_HEIGHT + ROW_VERTICAL_PADDING,
+          ),
+        );
+      }
+    });
+
+    return map;
+  }, [filledRowEntries, columns, getMeasureCtx]);
+
+  const getRowHeight = useCallback(
+    (row: number) => rowHeightMap.get(row) ?? MIN_ROW_HEIGHT,
+    [rowHeightMap],
   );
 
   // --- Delete whatever rows/columns are currently selected ---
-  const deleteSelected = React.useCallback(() => {
+  const deleteSelected = useCallback(() => {
     const selectedRows = selection.rows;
     const selectedCols = selection.columns;
 
@@ -402,7 +850,7 @@ const SheetTable = () => {
   }, [selection, columns]);
 
   // --- Keyboard shortcut: Delete/Backspace removes selected rows/cols ---
-  const onKeyDown = React.useCallback(
+  const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (event.key === "Delete" || event.key === "Backspace") {
         const hasFullRowOrColSelection =
@@ -416,18 +864,24 @@ const SheetTable = () => {
     [selection, deleteSelected],
   );
 
-  const hasSelection =
-    selection.rows.length > 0 || selection.columns.length > 0;
-
   return (
-    <div className="flex flex-col p-2 max-h-svh" onKeyDown={onKeyDown}>
+    <div className="flex flex-col max-h-svh" onKeyDown={onKeyDown}>
+      <div className="flex items-center justify-end px-1 pb-1 text-xs text-gray-400">
+        {saveStatus === "saving" && "Saving…"}
+        {saveStatus === "saved" && "All changes saved"}
+        {saveStatus === "error" && (
+          <span className="text-red-500">Couldn't save — retrying…</span>
+        )}
+      </div>
       <div className="h-full rounded-xl overflow-hidden border border-gray-200">
         <DataEditor
           getCellContent={getCellContent}
           columns={columns}
           rows={data.length}
+          rowHeight={getRowHeight}
           onCellEdited={onCellEdited}
           onColumnResize={onColumnResize}
+          onVisibleRegionChanged={onVisibleRegionChanged}
           rowMarkers="both"
           gridSelection={selection}
           onGridSelectionChange={setSelection}
@@ -436,112 +890,13 @@ const SheetTable = () => {
           rowSelect="multi"
           getCellsForSelection={true}
           width="100%"
-          customRenderers={[testStatusCellRenderer]}
+          customRenderers={[testStatusCellRenderer, authorSuggestCellRenderer]}
           theme={{
             bgHeader: "#f9fafb",
             borderColor: "#e5e7eb",
             horizontalBorderColor: "#e5e7eb",
           }}
         />
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginTop: 8,
-          marginLeft: 4,
-        }}
-      >
-        <button
-          type="button"
-          onClick={deleteSelected}
-          disabled={!hasSelection}
-          title="Delete selected rows/columns"
-          aria-label="Delete selected rows/columns"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 32,
-            height: 32,
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            background: hasSelection ? "#fff" : "#f9fafb",
-            cursor: hasSelection ? "pointer" : "not-allowed",
-            color: hasSelection ? "#b91c1c" : "#9ca3af",
-            transition: "background-color 0.15s ease",
-          }}
-          onMouseEnter={(e) => {
-            if (hasSelection) e.currentTarget.style.background = "#fef2f2";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = hasSelection
-              ? "#fff"
-              : "#f9fafb";
-          }}
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 6h18" />
-            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6" />
-            <path d="M14 11v6" />
-          </svg>
-        </button>
-
-        <button
-          type="button"
-          onClick={addRow}
-          title="Add a new row"
-          aria-label="Add a new row"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            height: 32,
-            padding: "0 12px",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            background: "#fff",
-            cursor: "pointer",
-            color: "#374151",
-            fontSize: 13,
-            fontWeight: 500,
-            transition: "background-color 0.15s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f9fafb";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "#fff";
-          }}
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
-          New row
-        </button>
       </div>
     </div>
   );
