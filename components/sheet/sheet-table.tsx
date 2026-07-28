@@ -212,7 +212,7 @@ const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillText(
-      text || "Type a name…",
+      text || "",
       rect.x + 8,
       rect.y + rect.height / 2,
       rect.width - 16,
@@ -376,19 +376,13 @@ const createEmptyRow = (cols: GridColumn[]): RowData => {
 };
 
 const buildInitialData = (): RowData[] => [
-  ...seedData,
   ...Array.from({ length: INITIAL_BUFFER }, () =>
     createEmptyRow(initialColumns),
   ),
 ];
 
-// --- Auto-size helpers (width AND height) ---
-// Columns grow to fit their widest value (up to a cap); once a value is
-// too long even for the widened column, the cell wraps onto multiple
-// lines and the row grows taller to fit that wrapped text. So content
-// is never clipped in either direction.
 const MIN_COL_WIDTH = 80;
-const MAX_COL_WIDTH = 420; // beyond this, text wraps + the row grows taller instead
+const MAX_COL_WIDTH = 1420; // beyond this, text wraps + the row grows taller instead
 const CELL_TEXT_PADDING = 32; // left+right cell padding + a little slack
 const MEASURE_FONT = "13px system-ui, -apple-system, sans-serif";
 const MEASURE_FONT_BOLD = "600 13px system-ui, -apple-system, sans-serif";
@@ -437,15 +431,19 @@ const countWrappedLines = (
 const AUTOSAVE_DEBOUNCE_MS = 800;
 
 interface SheetTableProps {
-  // Identifies which Sheet row in Postgres this component reads/writes.
-  // Pass a stable id (e.g. from the URL: /sheets/[id]) — a fresh id if
-  // you're creating a new sheet, or the id of one you're re-opening.
   sheetId: string;
+  initialRows: RowData[];
 }
+export type { RowData };
 
-const SheetTable = ({ sheetId }: SheetTableProps) => {
+const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   const [columns, setColumns] = useState<GridColumn[]>(initialColumns);
-  const [data, setData] = useState<RowData[]>(buildInitialData);
+  const [data, setData] = useState<RowData[]>(() => [
+    ...initialRows,
+    ...Array.from({ length: INITIAL_BUFFER }, () =>
+      createEmptyRow(initialColumns),
+    ),
+  ]);
   const [selection, setSelection] = useState<GridSelection>(emptySelection);
 
   // Gate autosave until the initial load has resolved, so we don't
@@ -865,14 +863,7 @@ const SheetTable = ({ sheetId }: SheetTableProps) => {
   );
 
   return (
-    <div className="flex flex-col max-h-svh" onKeyDown={onKeyDown}>
-      <div className="flex items-center justify-end px-1 pb-1 text-xs text-gray-400">
-        {saveStatus === "saving" && "Saving…"}
-        {saveStatus === "saved" && "All changes saved"}
-        {saveStatus === "error" && (
-          <span className="text-red-500">Couldn't save — retrying…</span>
-        )}
-      </div>
+    <div className="flex flex-col h-full" onKeyDown={onKeyDown}>
       <div className="h-full rounded-xl overflow-hidden border border-gray-200">
         <DataEditor
           getCellContent={getCellContent}
