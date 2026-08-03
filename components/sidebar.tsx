@@ -45,7 +45,7 @@ const navItems = [
   },
   { linkTo: "/users?role=CONSULTANT", icon: Users, name: "Consultants" },
   {
-    linkTo: "/progress-sheet",
+    linkTo: "/sheets",
     icon: TableProperties,
     name: "Progress Table",
   },

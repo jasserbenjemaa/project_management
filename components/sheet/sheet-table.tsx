@@ -20,6 +20,18 @@ import "@glideapps/glide-data-grid/dist/index.css";
 // Adjust these import paths to wherever you put the action files.
 import { loadSheet, saveSheet } from "@/app/actions/sheet";
 import { getUserSuggestions, type UserSuggestion } from "@/app/actions/users";
+import {
+  STATUS_LLT_COL_ID,
+  statusLLTCellRenderer,
+  type StatusLLTCell,
+  type StatusLLTCellProps,
+} from "./status-llt-cell";
+import {
+  FORMAT_CHECKED_COL_IDS,
+  formatCheckedCellRenderer,
+  type FormatCheckedCell,
+  type FormatCheckedCellProps,
+} from "./format-checked-cell";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 // ---- Types ----
 type RowData = Record<string, string>;
@@ -575,9 +587,40 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
         return authorCell;
       }
 
+      if (colId === STATUS_LLT_COL_ID) {
+        const statusCell: StatusLLTCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "status-llt-cell",
+            text: value,
+          },
+        };
+        return statusCell;
+      }
+
       // Highlight IQA / Comment LLT cells red-tinted when this row's
       // Test Status is KO, so it's obvious they need attention.
       const isKORow = dataRow?.[TEST_STATUS_COL_ID] === "KO";
+
+      if (FORMAT_CHECKED_COL_IDS.has(colId)) {
+        const formatCell: FormatCheckedCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "format-checked-cell",
+            text: value,
+            colId,
+          },
+          themeOverride:
+            isKORow && KO_HIGHLIGHT_COL_IDS.has(colId)
+              ? { bgCell: "#fef2f2" }
+              : undefined,
+        };
+        return formatCell;
+      }
       const shouldHighlight = isKORow && KO_HIGHLIGHT_COL_IDS.has(colId);
 
       return {
@@ -620,6 +663,32 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
         newValue.kind === GridCellKind.Custom
       ) {
         const newText = (newValue.data as AuthorSuggestCellProps).text;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newText };
+          return next;
+        });
+        return;
+      }
+
+      if (
+        colId === STATUS_LLT_COL_ID &&
+        newValue.kind === GridCellKind.Custom
+      ) {
+        const newText = (newValue.data as StatusLLTCellProps).text;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newText };
+          return next;
+        });
+        return;
+      }
+
+      if (
+        FORMAT_CHECKED_COL_IDS.has(colId) &&
+        newValue.kind === GridCellKind.Custom
+      ) {
+        const newText = (newValue.data as FormatCheckedCellProps).text;
         setData((prev) => {
           const next = [...prev];
           next[row] = { ...next[row], [colId]: newText };
@@ -881,7 +950,12 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
           rowSelect="multi"
           getCellsForSelection={true}
           width="100%"
-          customRenderers={[testStatusCellRenderer, authorSuggestCellRenderer]}
+          customRenderers={[
+            testStatusCellRenderer,
+            authorSuggestCellRenderer,
+            statusLLTCellRenderer,
+            formatCheckedCellRenderer,
+          ]}
           theme={{
             bgHeader: "#f9fafb",
             borderColor: "#e5e7eb",
