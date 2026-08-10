@@ -18,6 +18,7 @@ export default async function ProjectUsersPage({
   ]);
 
   const project = projects.find((p) => p.id === projectId);
+  const visibleUsers = users.filter((user) => user.role !== "UNIT_MANAGER");
 
   if (!project) {
     notFound();
@@ -33,7 +34,7 @@ export default async function ProjectUsersPage({
           </p>
         </div>
         <UsersView
-          users={users}
+          users={visibleUsers}
           projects={projects}
           userOptions={userOptions}
           fixedProject={project}

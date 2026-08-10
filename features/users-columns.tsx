@@ -1,7 +1,13 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, PencilIcon, TrashIcon } from "lucide-react";
+import {
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  PencilIcon,
+  TrashIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -110,6 +116,15 @@ export const ROLE_CONFIG: Record<
   },
 };
 
+// Fixed priority order used when sorting the Role column. Engagement
+// Manager ranks first (0) so it sits at the top when sorted ascending.
+// Keep in sync if new roles are added to the Role enum.
+const ROLE_SORT_RANK: Record<UserRole, number> = {
+  ENGAGEMENT_MANAGER: 0,
+  UNIT_MANAGER: 1,
+  CONSULTANT: 2,
+};
+
 export const SENIORITY_CONFIG: Record<
   SeniorityLevel,
   { label: string; className: string }
@@ -165,6 +180,31 @@ const initials = (name: string) =>
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+// Shared header button that shows an up/down/neutral arrow depending on
+// the column's current sort state, used by any sortable column.
+function SortableHeader({
+  label,
+  isSorted,
+  onClick,
+}: {
+  label: string;
+  isSorted: false | "asc" | "desc";
+  onClick: () => void;
+}) {
+  const Icon =
+    isSorted === "asc"
+      ? ArrowUp
+      : isSorted === "desc"
+        ? ArrowDown
+        : ArrowUpDown;
+  return (
+    <Button variant="ghost" size="sm" className="-ml-3" onClick={onClick}>
+      {label}
+      <Icon className="ml-2 size-3.5" />
+    </Button>
+  );
+}
 
 interface ColumnActions {
   onEdit: (user: UserRow) => void;
@@ -233,7 +273,13 @@ export const getUserColumns = ({
   },
   {
     accessorKey: "role",
-    header: "Role",
+    header: ({ column }) => (
+      <SortableHeader
+        label="Role"
+        isSorted={column.getIsSorted()}
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      />
+    ),
     cell: ({ row }) => {
       const role = ROLE_CONFIG[row.getValue("role") as UserRole];
       return (
@@ -241,6 +287,13 @@ export const getUserColumns = ({
           {role.label}
         </Badge>
       );
+    },
+    // Custom priority order instead of alphabetical: Engagement Manager
+    // ranks first, so it's on top by default (ascending sort).
+    sortingFn: (rowA, rowB) => {
+      const a = ROLE_SORT_RANK[rowA.original.role];
+      const b = ROLE_SORT_RANK[rowB.original.role];
+      return a - b;
     },
     filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)),
   },

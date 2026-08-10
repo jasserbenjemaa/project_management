@@ -196,10 +196,6 @@ export async function getUserSuggestions(): Promise<UserSuggestion[]> {
   }));
 }
 
-// Assigns a user to a project. Since Assignment requires assignedById and
-// roleOnProject, we default roleOnProject to the user's own Role and
-// assignedById to the user being assigned (adjust if you want this to be
-// "current logged-in user" instead — see note below).
 export async function assignUserToProject(userId: string, projectId: string) {
   const user = await db.user.findUniqueOrThrow({
     where: { id: userId },

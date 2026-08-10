@@ -34,7 +34,6 @@ import {
 } from "./users-columns";
 
 type UserOption = { id: string; name: string };
-type ProjectOption = { id: string; name: string };
 
 // Radix's <SelectItem> can't take an empty string as its value, so this
 // sentinel stands in for "not set" on every optional single-select below.
@@ -45,13 +44,11 @@ interface UserFormDialogProps {
   onOpenChange: (open: boolean) => void;
   // Pass a user to edit them; pass null to create a new one.
   user: UserRow | null;
-  projects: ProjectOption[];
   userOptions: UserOption[];
   // Prefilled from the page's active filters when creating a user - e.g. if
   // the "Project" filter is set to "Project 4", the new user defaults into it.
   defaultValues?: {
     role?: Role;
-    projectId?: string;
     artifactType?: string;
   };
   onSaved?: () => void;
@@ -64,7 +61,6 @@ type FormState = {
   role: Role | "";
   seniority_level: string; // Level | NONE - only meaningful when role is CONSULTANT
   artifact_type: string; // Artifact | NONE
-  projectId: string; // project id | NONE
 };
 
 const emptyState = (): FormState => ({
@@ -74,14 +70,12 @@ const emptyState = (): FormState => ({
   role: "",
   seniority_level: NONE,
   artifact_type: NONE,
-  projectId: NONE,
 });
 
 export function UserFormDialog({
   open,
   onOpenChange,
   user,
-  projects,
   defaultValues,
   onSaved,
 }: UserFormDialogProps) {
@@ -103,21 +97,17 @@ export function UserFormDialog({
         role: user.role,
         seniority_level: user.seniority_level ?? NONE,
         artifact_type: user.artifact_type ?? NONE,
-        projectId: user.primaryAssignment?.projectId ?? NONE,
       });
     } else {
       setForm({
         ...emptyState(),
         role: defaultValues?.role ?? "",
-        // Comes from the page's ?projectId= filter, if one is set.
-        projectId: defaultValues?.projectId ?? NONE,
         artifact_type: defaultValues?.artifactType ?? NONE,
       });
     }
     setError(null);
   }, [open, user, defaultValues]);
 
-  const hasProject = form.projectId !== NONE;
   const isConsultant = form.role === "CONSULTANT";
 
   // Seniority only means something for consultants - clear it whenever the
@@ -158,10 +148,6 @@ export function UserFormDialog({
         form.artifact_type === NONE
           ? null
           : (form.artifact_type as UserFormInput["artifact_type"]),
-      // Manager, role-on-project, start date, and assigned-by are no longer
-      // collected in this form - the server fills in sane defaults for the
-      // assignment when a project is selected.
-      projectId: hasProject ? form.projectId : null,
     };
 
     startTransition(async () => {
@@ -186,8 +172,8 @@ export function UserFormDialog({
           <DialogTitle>{isEditing ? "Edit user" : "New user"}</DialogTitle>
           <DialogDescription>
             {isEditing
-              ? "Update this user's info, role, and project assignment."
-              : "Add a new user and, optionally, assign them to a project."}
+              ? "Update this user's info and role."
+              : "Add a new user."}
           </DialogDescription>
         </DialogHeader>
 
@@ -270,13 +256,7 @@ export function UserFormDialog({
             </div>
           )}
 
-          <div
-            className={
-              isConsultant
-                ? "flex flex-col gap-1.5"
-                : "flex flex-col gap-1.5 sm:col-span-2"
-            }
-          >
+          <div className="flex flex-col gap-1.5">
             <Label>Artifact</Label>
             <Select
               value={form.artifact_type}
@@ -290,31 +270,6 @@ export function UserFormDialog({
                 {Object.entries(ARTIFACT_CONFIG).map(([type, config]) => (
                   <SelectItem key={type} value={type}>
                     {config.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="sm:col-span-2 flex flex-col gap-1.5">
-            <Label>Project</Label>
-            <Select
-              value={form.projectId}
-              onValueChange={(v) => setForm({ ...form, projectId: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Unassigned">
-                  {form.projectId === NONE
-                    ? "Unassigned"
-                    : (projects.find((p) => p.id === form.projectId)?.name ??
-                      "Unassigned")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Unassigned</SelectItem>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>

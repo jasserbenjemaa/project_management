@@ -8,6 +8,7 @@ export default async function EngagementManagersPage() {
     getUserOptions(),
   ]);
 
+  const visibleUsers = users.filter((user) => user.role !== "UNIT_MANAGER");
   return (
     <main>
       <div className="flex-1 p-6 flex flex-col gap-6">
@@ -18,7 +19,7 @@ export default async function EngagementManagersPage() {
           </p>
         </div>
         <UsersView
-          users={users}
+          users={visibleUsers}
           projects={projects}
           userOptions={userOptions}
           fixedRole="ENGAGEMENT_MANAGER"

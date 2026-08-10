@@ -2,13 +2,15 @@
 // actual /users route lives in the app router if it isn't app/users/page.tsx.
 import { UsersView } from "@/components/users-view";
 import { getProjects, getUserOptions, getUsers } from "@/lib/dal";
-
 export default async function UsersPage() {
   const [users, projects, userOptions] = await Promise.all([
     getUsers(),
     getProjects(),
     getUserOptions(),
   ]);
+
+  // Unit Managers are excluded from this list entirely.
+  const visibleUsers = users.filter((user) => user.role !== "UNIT_MANAGER");
 
   return (
     <main>
@@ -20,7 +22,7 @@ export default async function UsersPage() {
           </p>
         </div>
         <UsersView
-          users={users}
+          users={visibleUsers}
           projects={projects}
           userOptions={userOptions}
         />

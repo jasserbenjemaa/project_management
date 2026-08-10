@@ -1,5 +1,4 @@
 "use client";
-
 import * as React from "react";
 import {
   ColumnDef,
@@ -21,24 +20,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   // Rows per page. Defaults to 7.
   pageSize?: number;
+  // Optional default sort applied before the user touches anything, e.g.
+  // [{ id: "role", desc: false }] for the users table. This is a generic
+  // component reused across tables with different columns, so it must NOT
+  // be hardcoded here - only pass an id that actually exists on the
+  // columns you're rendering, or TanStack will throw.
+  initialSorting?: SortingState;
 }
-
 export function DataTable<TData, TValue>({
   columns,
   data,
   pageSize = 7,
+  initialSorting = [],
 }: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [sorting, setSorting] = React.useState<SortingState>(initialSorting);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
   );
-
   const table = useReactTable({
     data,
     columns,
@@ -57,7 +60,6 @@ export function DataTable<TData, TValue>({
       columnFilters,
     },
   });
-
   return (
     <div>
       <div className="rounded-md border">
