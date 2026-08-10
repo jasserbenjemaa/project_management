@@ -195,3 +195,48 @@ export async function getUserSuggestions(): Promise<UserSuggestion[]> {
     artifactType: u.artifact_type,
   }));
 }
+
+// Assigns a user to a project. Since Assignment requires assignedById and
+// roleOnProject, we default roleOnProject to the user's own Role and
+// assignedById to the user being assigned (adjust if you want this to be
+// "current logged-in user" instead — see note below).
+export async function assignUserToProject(userId: string, projectId: string) {
+  const user = await db.user.findUniqueOrThrow({
+    where: { id: userId },
+  });
+
+  await db.assignment.upsert({
+    where: {
+      userId_projectId: {
+        userId,
+        projectId,
+      },
+    },
+    update: {},
+    create: {
+      userId,
+      projectId,
+      assignedById: userId, // TODO: replace with the current session user's id
+      roleOnProject: user.role,
+      startDate: new Date(),
+    },
+  });
+
+  revalidatePath("/");
+}
+
+export async function unassignUserFromProject(
+  userId: string,
+  projectId: string,
+) {
+  await db.assignment.delete({
+    where: {
+      userId_projectId: {
+        userId,
+        projectId,
+      },
+    },
+  });
+
+  revalidatePath("/");
+}

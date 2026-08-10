@@ -43,7 +43,7 @@ export const ProjectsView = ({
   }, [search, projects]);
 
   const handleProjectClick = (projectId: string) => {
-    router.push(`/users?projectId=${projectId}`);
+    router.push(`/projects/${projectId}`);
   };
 
   // Called by the form dialog after a create/update server action succeeds.

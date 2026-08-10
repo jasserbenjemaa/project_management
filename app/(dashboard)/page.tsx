@@ -26,7 +26,6 @@ const Home = () => {
     name: string;
     color: string;
     description: string;
-    stats?: { done: number; inProgress: number; blocked: number };
   }
   const cards: CardData[] = [
     {
@@ -34,36 +33,32 @@ const Home = () => {
       imageUrl: "/campgemini_values/team_spirit.svg",
       icon: FolderOpen,
       name: "Projects",
-      stats: { done: 12, inProgress: 4, blocked: 1 },
       color: "blue",
-      description: "projects status",
+      description: "Track project status and progress",
     },
     {
-      linkTo: "/users?role=ENGAGEMENT_MANAGER",
+      linkTo: "/engagement-manager",
       imageUrl: "/campgemini_values/boldness.svg",
       icon: User,
-      name: "Engagement manager",
-      stats: { done: 8, inProgress: 3, blocked: 2 },
+      name: "Engagement Manager",
       color: "orange",
-      description: "manage people",
+      description: "Browse and manage engagement managers",
     },
     {
-      linkTo: "/users?role=CONSULTANT",
+      linkTo: "/consultant",
       imageUrl: "/campgemini_values/trust.svg",
       icon: Users,
       name: "Consultants",
-      stats: { done: 5, inProgress: 2, blocked: 0 },
       color: "purple",
-      description: "Tasks status",
+      description: "Browse, add, and manage consultants",
     },
     {
       linkTo: "/kpi",
       imageUrl: "/campgemini_values/freedom.svg",
       icon: ChartColumnBig,
       name: "KPIs",
-      stats: { done: 0, inProgress: 0, blocked: 0 },
       color: "green",
-      description: "KPIs status",
+      description: "View performance metrics and KPIs",
     },
   ];
   return (
@@ -99,7 +94,7 @@ const Home = () => {
             </CardHeader>
             <Image
               src="capgemini_symbol.svg"
-              alt=""
+              alt="capgemini symbol"
               aria-hidden="true"
               height={280}
               width={280}
@@ -118,7 +113,6 @@ const Home = () => {
               name={card.name}
               color={card.color}
               description={card.description}
-              stats={card.stats}
             />
           ))}
         </div>

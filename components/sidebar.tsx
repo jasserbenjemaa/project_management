@@ -29,21 +29,17 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Image from "next/image";
 import { DottedSeparator } from "./dotted-separator";
-
-interface AppSidebarProps {
-  name: string;
-  role: string;
-}
+import { useUser } from "@/context/user-context";
 
 const navItems = [
   { linkTo: "/", icon: Home, name: "Home" },
   { linkTo: "/projects", icon: FolderOpen, name: "Projects" },
   {
-    linkTo: "/users?role=ENGAGEMENT_MANAGER",
+    linkTo: "/engagement-manager",
     icon: User,
     name: "Engagement Manager",
   },
-  { linkTo: "/users?role=CONSULTANT", icon: Users, name: "Consultants" },
+  { linkTo: "/consultant", icon: Users, name: "Consultants" },
   {
     linkTo: "/sheets",
     icon: TableProperties,
@@ -59,11 +55,10 @@ const revealBase =
 const revealExpanded =
   "group-data-[state=expanded]:opacity-100 group-data-[state=expanded]:translate-x-0";
 
-export function NavSidebar(props: AppSidebarProps) {
+export function NavSidebar() {
+  const { name, role } = useUser();
   const { state, toggleSidebar } = useSidebar();
   const pathname = usePathname();
-  const name = props.name ? props.name : "gust";
-  const role = props.role ? props.role : "gust";
   const isExpanded = state === "expanded";
   const handleIconClick = () => {
     if (!isExpanded) {

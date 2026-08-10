@@ -51,17 +51,21 @@ export async function signOut() {
   await deleteSession();
   redirect("/sign-in");
 }
+
 export async function getAuthUser() {
   try {
     const session = await getSession();
     const id = session?.userId;
-    if (!session) return null;
-    const data = db.user.findUnique({
+    if (!id) return null;
+
+    const user = await db.user.findUnique({
       where: { id },
       select: { id: true, name: true, role: true },
     });
-    return data;
+
+    return user;
   } catch (e) {
-    console.log("error in getting auth user:", e);
+    console.error("error in getting auth user:", e);
+    return null;
   }
 }

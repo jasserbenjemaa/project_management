@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PlusIcon, FolderOpen, SearchIcon, UsersIcon } from "lucide-react";
+import {
+  PlusIcon,
+  FolderOpen,
+  SearchIcon,
+  UsersIcon,
+  UserPlusIcon,
+} from "lucide-react";
 
 import {
   Select,
@@ -20,16 +26,15 @@ import { DataTable } from "./data-table";
 import { getUserColumns, ROLE_CONFIG, UserRow } from "@/features/users-columns";
 import { UserFormDialog } from "@/features/users-form-dialog";
 import { DeleteUserDialog } from "@/features/users-delete-dialog";
+import { AssignUsersDialog } from "@/features/assign-users-dialog";
 import {
   ARTIFACT_TABS,
   ArtifactTab,
   useUsersFilters,
 } from "@/hooks/use-users-filters";
 
-// Human-readable labels for the tab strip. "all" gets its own entry so the
-// view can show every user regardless of artifact type.
 const TAB_LABELS: Record<ArtifactTab, string> = {
-  all: "All users",
+  all: "All",
   HLT: "HLT",
   LLT: "LLT",
   LLR: "LLR",
@@ -39,23 +44,34 @@ const TAB_LABELS: Record<ArtifactTab, string> = {
 
 interface UsersViewProps {
   users: UserRow[];
-  // Passed in from the server (e.g. `prisma.project.findMany()`) so the
-  // "Project" filter always reflects real projects, not mock data.
   projects: { id: string; name: string }[];
-  // Every user, for the "Manager" and "Assigned by" selects in the form.
   userOptions: { id: string; name: string }[];
+  // When set, this view is scoped to a single project: the filter is locked
+  // to it, and "New" becomes "Assign" (opens AssignUsersDialog instead of
+  // the create form).
+  fixedProject?: { id: string; name: string };
+  // When set, locks the role filter to this role (e.g. "CONSULTANT").
+  fixedRole?: string;
+  // Controls whether the create button renders at all when there's no
+  // fixedProject. Defaults to true so existing pages keep working.
+  allowCreate?: boolean;
 }
 
-export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
+export const UsersView = ({
+  users,
+  projects,
+  userOptions,
+  fixedProject,
+  fixedRole,
+  allowCreate = true,
+}: UsersViewProps) => {
   const router = useRouter();
   const [filters, setFilters] = useUsersFilters();
 
-  // Create/edit dialog: `editingUser` is null when creating, set when
-  // editing. `isFormOpen` controls visibility either way.
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
-  // Delete dialog is open whenever this is non-null.
   const [deletingUser, setDeletingUser] = useState<UserRow | null>(null);
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
 
   const handleUserClick = (userId: string) => {
     router.push(`/users/${userId}`);
@@ -75,16 +91,18 @@ export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
     setDeletingUser(user);
   };
 
-  // The "New" button carries over whatever the user has already filtered
-  // by, e.g. if the "Project" filter is set to "Project 4", a new user
-  // defaults into Project 4 instead of "Unassigned".
+  // Effective filters: a fixedProject/fixedRole overrides whatever is in
+  // the URL, so the page-level "scope" always wins.
+  const effectiveRole = fixedRole ?? filters.role;
+  const effectiveProjectId = fixedProject?.id ?? filters.projectId;
+
   const createDefaults = useMemo(
     () => ({
-      role: filters.role !== "all" ? filters.role : undefined,
-      projectId: filters.projectId !== "all" ? filters.projectId : undefined,
+      role: effectiveRole !== "all" ? effectiveRole : undefined,
+      projectId: effectiveProjectId !== "all" ? effectiveProjectId : undefined,
       artifactType: filters.artifact !== "all" ? filters.artifact : undefined,
     }),
-    [filters],
+    [effectiveRole, effectiveProjectId, filters.artifact],
   );
 
   const filteredUsers = useMemo(() => {
@@ -98,15 +116,16 @@ export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
         user.name.toLowerCase().includes(search) ||
         user.email.toLowerCase().includes(search);
 
-      const matchesRole = filters.role === "all" || user.role === filters.role;
+      const matchesRole =
+        effectiveRole === "all" || user.role === effectiveRole;
 
       const matchesProject =
-        filters.projectId === "all" ||
-        user.projects.some((project) => project.id === filters.projectId);
+        effectiveProjectId === "all" ||
+        user.projects.some((project) => project.id === effectiveProjectId);
 
       return matchesTab && matchesSearch && matchesRole && matchesProject;
     });
-  }, [users, filters]);
+  }, [users, filters, effectiveRole, effectiveProjectId]);
 
   const tableColumns = useMemo(
     () =>
@@ -118,6 +137,9 @@ export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
+  const showAssignButton = !!fixedProject;
+  const showNewButton = !fixedProject && allowCreate;
 
   return (
     <>
@@ -141,14 +163,28 @@ export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
                 </TabsTrigger>
               ))}
             </TabsList>
-            <Button
-              size="sm"
-              className="w-full lg:w-auto"
-              onClick={handleAddUser}
-            >
-              <PlusIcon className="size-4 mr-2" />
-              New
-            </Button>
+
+            {showAssignButton && (
+              <Button
+                size="sm"
+                className="w-full lg:w-auto"
+                onClick={() => setIsAssignOpen(true)}
+              >
+                <UserPlusIcon className="size-4 mr-2" />
+                Assign
+              </Button>
+            )}
+
+            {showNewButton && (
+              <Button
+                size="sm"
+                className="w-full lg:w-auto"
+                onClick={handleAddUser}
+              >
+                <PlusIcon className="size-4 mr-2" />
+                New
+              </Button>
+            )}
           </div>
 
           <DottedSeparator className="my-4" />
@@ -164,69 +200,74 @@ export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
               />
             </div>
 
-            <Select
-              value={filters.role}
-              onValueChange={(value) =>
-                setFilters({ role: value as typeof filters.role })
-              }
-            >
-              <SelectTrigger className="h-8">
-                <div className="flex items-center pr-2">
-                  <UsersIcon className="size-4 mr-2" />
-                  <SelectValue placeholder="All roles">
-                    {filters.role === "all"
-                      ? "All roles"
-                      : (ROLE_CONFIG[filters.role]?.label ?? "All roles")}
+            {/* Role filter is hidden when the page already locks the role
+                (e.g. Consultants / Engagement Managers pages). */}
+            {!fixedRole && (
+              <Select
+                value={filters.role}
+                onValueChange={(value) =>
+                  setFilters({ role: value as typeof filters.role })
+                }
+              >
+                <SelectTrigger className="h-8">
+                  <div className="flex items-center pr-2">
+                    <UsersIcon className="size-4 mr-2" />
+                    <SelectValue placeholder="All roles">
+                      {filters.role === "all"
+                        ? "All roles"
+                        : (ROLE_CONFIG[filters.role]?.label ?? "All roles")}
+                    </SelectValue>
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All roles</SelectItem>
+                  <SelectSeparator />
+                  {Object.entries(ROLE_CONFIG).map(([role, config]) => (
+                    <SelectItem key={role} value={role}>
+                      {config.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {/* Project filter is hidden when the page is already scoped to
+                one project. */}
+            {!fixedProject && (
+              <Select
+                value={filters.projectId}
+                onValueChange={(value) => setFilters({ projectId: value })}
+              >
+                <SelectTrigger className="lg:w-64 w-full h-8">
+                  <FolderOpen className="size-4 mr-2 shrink-0" />
+                  <SelectValue placeholder="All projects" className="min-w-0">
+                    <span className="truncate block">
+                      {filters.projectId === "all"
+                        ? "All projects"
+                        : (projects.find((p) => p.id === filters.projectId)
+                            ?.name ?? "All projects")}
+                    </span>
                   </SelectValue>
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All roles</SelectItem>
-                <SelectSeparator />
-                {Object.entries(ROLE_CONFIG).map(([role, config]) => (
-                  <SelectItem key={role} value={role}>
-                    {config.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {/* URL stores the project's id (?projectId=<uuid>); SelectValue explicitly
-    looks up and renders the matching project's name. */}
-            <Select
-              value={filters.projectId}
-              onValueChange={(value) => setFilters({ projectId: value })}
-            >
-              <SelectTrigger className="lg:w-64 w-full h-8">
-                <FolderOpen className="size-4 mr-2 shrink-0" />
-                <SelectValue placeholder="All projects" className="min-w-0">
-                  <span className="truncate block">
-                    {filters.projectId === "all"
-                      ? "All projects"
-                      : (projects.find((p) => p.id === filters.projectId)
-                          ?.name ?? "All projects")}
-                  </span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All projects</SelectItem>
-                <SelectSeparator />
-                {projects.map((project) => (
-                  <SelectItem
-                    key={project.id}
-                    value={project.id}
-                    title={project.name}
-                  >
-                    <span className="truncate">{project.name}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All projects</SelectItem>
+                  <SelectSeparator />
+                  {projects.map((project) => (
+                    <SelectItem
+                      key={project.id}
+                      value={project.id}
+                      title={project.name}
+                    >
+                      <span className="truncate">{project.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <DottedSeparator className="my-4" />
 
-          {/* One TabsContent per tab, all rendering the same filtered table -
-              the tab itself just narrows `filteredUsers` via filters.artifact. */}
           {ARTIFACT_TABS.map((tab) => (
             <TabsContent key={tab} value={tab} className="mt-0">
               <DataTable
@@ -254,6 +295,17 @@ export const UsersView = ({ users, projects, userOptions }: UsersViewProps) => {
         onOpenChange={(open) => !open && setDeletingUser(null)}
         onDeleted={() => router.refresh()}
       />
+
+      {fixedProject && (
+        <AssignUsersDialog
+          open={isAssignOpen}
+          onOpenChange={setIsAssignOpen}
+          users={users}
+          projectId={fixedProject.id}
+          projectName={fixedProject.name}
+          onAssigned={() => router.refresh()}
+        />
+      )}
     </>
   );
 };
