@@ -5,10 +5,9 @@ import { ArrowRight, LucideIcon } from "lucide-react";
 
 // Tailwind needs full class strings at build time, so colors are mapped
 // explicitly rather than built dynamically (e.g. `bg-${color}-100`).
-const colorStyles: Record<
-  string,
-  { badgeBg: string; icon: string; hoverBg: string; groupHoverBg: string }
-> = {
+type ColorStyle = { badgeBg: string; icon: string; hoverBg: string; groupHoverBg: string };
+
+const colorStyles: Record<string, ColorStyle> = {
   blue: {
     badgeBg: "bg-blue-100",
     icon: "text-blue-600",
@@ -65,17 +64,18 @@ const SubCard = (props: {
         width={280}
         className="absolute bottom-0 right-0 translate-x-[30%] translate-y-[-20%] opacity-10 pointer-events-none select-none"
       />
-      <div
-        className={`absolute  top-10 left-10 -translate-x-1/2 -translate-y-1/2 inline-flex w-fit p-2 rounded-xl ${styles.badgeBg}`}
-      >
+
+      <div className={`relative inline-flex w-fit p-2 rounded-xl ${styles.badgeBg}`}>
         <Icon className={`h-5 w-5 ${styles.icon}`} />
       </div>
-      <CardHeader className="absolute top-20 left-1  w-full">
+
+      <CardHeader className="relative p-0 mt-4">
         <CardTitle className="text-2xl font-bold">{name}</CardTitle>
       </CardHeader>
-      <CardContent className="absolute top-30 left-1  w-full text-sm text-muted-foreground">
+      <CardContent className="relative p-0 mt-2 text-sm text-muted-foreground">
         {description}
       </CardContent>
+
       <button
         type="button"
         aria-label={`Go to ${name}`}

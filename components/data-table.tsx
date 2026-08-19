@@ -1,4 +1,5 @@
 "use client";
+
 import * as React from "react";
 import {
   ColumnDef,
@@ -11,6 +12,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -20,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -32,6 +35,7 @@ interface DataTableProps<TData, TValue> {
   // columns you're rendering, or TanStack will throw.
   initialSorting?: SortingState;
 }
+
 export function DataTable<TData, TValue>({
   columns,
   data,
@@ -42,6 +46,7 @@ export function DataTable<TData, TValue>({
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
   );
+
   const table = useReactTable({
     data,
     columns,
@@ -60,9 +65,10 @@ export function DataTable<TData, TValue>({
       columnFilters,
     },
   });
+
   return (
     <div>
-      <div className="rounded-md border">
+      <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
