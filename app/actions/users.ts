@@ -1,8 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-// npm install bcryptjs @types/bcryptjs — swap for whatever hashing lib your
-// project already uses if it's not bcryptjs.
 import bcrypt from "bcrypt";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
@@ -84,9 +82,14 @@ export async function createUser(input: UserFormInput): Promise<ActionResult> {
                 projectId: input.projectId,
                 roleOnProject: input.role,
                 startDate: new Date(),
-                // Whoever is signed in and performing this create is
-                // recorded as having made the assignment.
                 assignedById,
+                userName: input.name,
+                userEmail: input.email,
+                projectName: (
+                  await db.project.findUniqueOrThrow({
+                    where: { id: input.projectId },
+                  })
+                ).name,
               },
             }
           : undefined,
@@ -122,11 +125,21 @@ export async function updateUser(
     const existing = await db.assignment.findFirst({ where: { userId } });
 
     if (input.projectId) {
+      // Snapshot fields (userName/userEmail/projectName) must always stay in
+      // sync with the current form input, regardless of which branch below
+      // runs, so we resolve the project name once up front.
+      const project = await db.project.findUniqueOrThrow({
+        where: { id: input.projectId },
+      });
+
       if (existing) {
         await db.assignment.update({
           where: { id: existing.id },
           data: {
             projectId: input.projectId,
+            userName: input.name,
+            userEmail: input.email,
+            projectName: project.name,
             ...(existing.projectId !== input.projectId
               ? {
                   roleOnProject: input.role,
@@ -144,6 +157,9 @@ export async function updateUser(
             roleOnProject: input.role,
             startDate: new Date(),
             assignedById: await requireCurrentUserId(),
+            userName: input.name,
+            userEmail: input.email,
+            projectName: project.name,
           },
         });
       }
@@ -197,9 +213,10 @@ export async function getUserSuggestions(): Promise<UserSuggestion[]> {
 }
 
 export async function assignUserToProject(userId: string, projectId: string) {
-  const user = await db.user.findUniqueOrThrow({
-    where: { id: userId },
-  });
+  const [user, project] = await Promise.all([
+    db.user.findUniqueOrThrow({ where: { id: userId } }),
+    db.project.findUniqueOrThrow({ where: { id: projectId } }),
+  ]);
 
   await db.assignment.upsert({
     where: {
@@ -208,13 +225,21 @@ export async function assignUserToProject(userId: string, projectId: string) {
         projectId,
       },
     },
-    update: {},
+    update: {
+      // Keep the snapshot fresh if the assignment already exists.
+      userName: user.name,
+      userEmail: user.email,
+      projectName: project.name,
+    },
     create: {
       userId,
       projectId,
       assignedById: userId, // TODO: replace with the current session user's id
       roleOnProject: user.role,
       startDate: new Date(),
+      userName: user.name,
+      userEmail: user.email,
+      projectName: project.name,
     },
   });
 

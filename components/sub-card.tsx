@@ -39,6 +39,12 @@ const colorStyles: Record<
     hoverBg: "hover:bg-rose-100",
     groupHoverBg: "group-hover:bg-rose-100",
   },
+  red: {
+    badgeBg: "bg-red-100",
+    icon: "text-red-600",
+    hoverBg: "hover:bg-red-100",
+    groupHoverBg: "group-hover:bg-red-100",
+  },
 };
 
 const SubCard = (props: {

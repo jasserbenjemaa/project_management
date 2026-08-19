@@ -7,26 +7,6 @@ import type { ProjectStatus } from "@/features/projects-columns";
 // Update this if the projects table lives at a different route.
 const PROJECTS_PATH = "/projects";
 
-const serializeProject = (project: {
-  id: string;
-  name: string;
-  status: ProjectStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}) => ({
-  ...project,
-  createdAt: project.createdAt.toISOString(),
-  updatedAt: project.updatedAt.toISOString(),
-});
-
-// READ
-export async function getProjects() {
-  const projects = await db.project.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-  return projects.map(serializeProject);
-}
-
 // CREATE
 export async function createProject(input: {
   name: string;

@@ -1,5 +1,4 @@
 "use client";
-
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -10,6 +9,7 @@ import { DataTable } from "./data-table";
 import { getColumns, Project } from "@/features/projects-columns";
 import { deleteProject } from "@/app/actions/projects";
 import { ProjectFormDialog } from "@/features/project_form_dialog";
+import { useUser } from "@/context/user-context";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +35,8 @@ export const ProjectsView = ({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isDeleting, startDeleteTransition] = useTransition();
+  const { role } = useUser();
+  const isUnitManager = role === "UNIT_MANAGER";
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) =>
@@ -89,17 +91,19 @@ export const ProjectsView = ({
   };
 
   const tableColumns = useMemo(() => {
-    const base = getColumns({
-      onEdit: handleEditProject,
-      onDelete: handleDeleteProject,
-    });
+    const base = getColumns(
+      isUnitManager
+        ? { onEdit: handleEditProject, onDelete: handleDeleteProject }
+        : {},
+    );
 
     // Give the table row an onClick without touching the shared DataTable component.
     return base.map((col, i) =>
       i === 0
         ? {
             ...col,
-            cell: (ctx: Parameters<NonNullable<typeof col.cell>>[0]) => (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            cell: (ctx: any) => (
               <button
                 className="text-left font-medium w-full hover:text-primary transition-colors"
                 onClick={() => handleProjectClick(ctx.row.original.id)}
@@ -126,14 +130,16 @@ export const ProjectsView = ({
                 className="pl-8 h-8 w-full"
               />
             </div>
-            <Button
-              size="sm"
-              className="w-full lg:w-auto"
-              onClick={handleNewProject}
-            >
-              <PlusIcon className="size-4 mr-2" />
-              New
-            </Button>
+            {isUnitManager && (
+              <Button
+                size="sm"
+                className="w-full lg:w-auto"
+                onClick={handleNewProject}
+              >
+                <PlusIcon className="size-4 mr-2" />
+                New
+              </Button>
+            )}
           </div>
 
           <DottedSeparator className="my-4" />

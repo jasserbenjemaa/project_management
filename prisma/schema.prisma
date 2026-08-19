@@ -60,17 +60,24 @@ model TimeEntry {
 }
 
 model Assignment {
-  id            String   @id @default(uuid())
-  userId        String
-  projectId     String
-  assignedById  String
+  id            String    @id @default(uuid())
+  userId        String?
+  projectId     String?
+  assignedById  String?
   roleOnProject String
   startDate     DateTime
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  assignedBy    User     @relation("AssignedBy", fields: [assignedById], references: [id])
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user          User     @relation("AssignedUser", fields: [userId], references: [id])
+  endDate       DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Snapshots — populated at creation, survive User/Project deletion
+  userName      String
+  userEmail     String
+  projectName   String
+
+  user          User?     @relation("AssignedUser", fields: [userId], references: [id], onDelete: SetNull)
+  assignedBy    User?     @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@unique([userId, projectId])
 }

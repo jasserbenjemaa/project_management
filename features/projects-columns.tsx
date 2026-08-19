@@ -52,100 +52,116 @@ const formatDate = (dateStr: string) => {
 };
 
 interface ColumnActions {
-  onEdit: (project: Project) => void;
-  onDelete: (project: Project) => void;
+  // Optional now: when omitted, the actions column (Edit/Delete) is left
+  // out entirely. Callers gate these behind role checks, e.g. only pass
+  // them for UNIT_MANAGER users.
+  onEdit?: (project: Project) => void;
+  onDelete?: (project: Project) => void;
 }
 
 export const getColumns = ({
   onEdit,
   onDelete,
-}: ColumnActions): ColumnDef<Project>[] => [
-  {
-    accessorKey: "name",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-3"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name
-          <ArrowUpDown className="ml-2 size-3.5" />
-        </Button>
-      );
+}: ColumnActions): ColumnDef<Project>[] => {
+  const showActions = !!(onEdit || onDelete);
+
+  const columns: ColumnDef<Project>[] = [
+    {
+      accessorKey: "name",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Name
+            <ArrowUpDown className="ml-2 size-3.5" />
+          </Button>
+        );
+      },
+      cell: ({ row }) => (
+        <span className="font-medium">{row.getValue("name")}</span>
+      ),
     },
-    cell: ({ row }) => (
-      <span className="font-medium">{row.getValue("name")}</span>
-    ),
-  },
-  {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => {
-      const status = STATUS_CONFIG[row.getValue("status") as ProjectStatus];
-      return (
-        <Badge variant="secondary" className={status.className}>
-          {status.label}
-        </Badge>
-      );
+    {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => {
+        const status = STATUS_CONFIG[row.getValue("status") as ProjectStatus];
+        return (
+          <Badge variant="secondary" className={status.className}>
+            {status.label}
+          </Badge>
+        );
+      },
+      filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
-    filterFn: (row, id, value) => value.includes(row.getValue(id)),
-  },
-  {
-    accessorKey: "createdAt",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-3"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Created
-          <ArrowUpDown className="ml-2 size-3.5" />
-        </Button>
-      );
+    {
+      accessorKey: "createdAt",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Created
+            <ArrowUpDown className="ml-2 size-3.5" />
+          </Button>
+        );
+      },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {formatDate(row.getValue("createdAt"))}
+        </span>
+      ),
+      sortingFn: (a, b) =>
+        new Date(a.original.createdAt).getTime() -
+        new Date(b.original.createdAt).getTime(),
     },
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {formatDate(row.getValue("createdAt"))}
-      </span>
-    ),
-    sortingFn: (a, b) =>
-      new Date(a.original.createdAt).getTime() -
-      new Date(b.original.createdAt).getTime(),
-  },
-  {
-    id: "actions",
-    header: "",
-    cell: ({ row }) => (
-      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit(row.original);
-          }}
-        >
-          <PencilIcon className="size-3.5" />
-          <span className="sr-only">Edit</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 text-destructive hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(row.original);
-          }}
-        >
-          <TrashIcon className="size-3.5" />
-          <span className="sr-only">Delete</span>
-        </Button>
-      </div>
-    ),
-  },
-];
+  ];
+
+  if (showActions) {
+    columns.push({
+      id: "actions",
+      header: "",
+      cell: ({ row }) => (
+        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(row.original);
+              }}
+            >
+              <PencilIcon className="size-3.5" />
+              <span className="sr-only">Edit</span>
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-destructive hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(row.original);
+              }}
+            >
+              <TrashIcon className="size-3.5" />
+              <span className="sr-only">Delete</span>
+            </Button>
+          )}
+        </div>
+      ),
+    });
+  }
+
+  return columns;
+};

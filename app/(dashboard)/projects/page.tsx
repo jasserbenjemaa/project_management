@@ -1,8 +1,8 @@
 import { ProjectsView } from "@/components/projects-view";
-import { getProjects } from "@/app/actions/projects";
+import { getCurrentUserProjects } from "@/lib/dal";
 
 const ProjectsPage = async () => {
-  const projects = await getProjects();
+  const projects = await getCurrentUserProjects();
 
   return (
     <main>

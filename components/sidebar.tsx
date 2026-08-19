@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import {
+  ScrollText,
   LogOut,
   Home,
   FolderOpen,
@@ -31,29 +32,57 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Image from "next/image";
 import { DottedSeparator } from "./dotted-separator";
 import { useUser } from "@/context/user-context";
+// `allowedRoles` omitted means visible to everyone.
+type Role = "UNIT_MANAGER" | "ENGAGEMENT_MANAGER" | "CONSULTANT";
 
-// Grouped into logical sections instead of one flat list, each with its
-// own label. Add/move items here freely — the render logic below just
-// maps over groups.
-const navGroups = [
+const navGroups: {
+  label: string;
+  items: {
+    linkTo: string;
+    icon: typeof Home;
+    name: string;
+    allowedRoles?: Role[];
+  }[];
+}[] = [
   {
     label: "Overview",
     items: [
       { linkTo: "/", icon: Home, name: "Home" },
       { linkTo: "/projects", icon: FolderOpen, name: "Projects" },
+      {
+        linkTo: "/projects/history",
+        icon: ScrollText,
+        name: "Projects history",
+        allowedRoles: ["ENGAGEMENT_MANAGER", "CONSULTANT"],
+      },
     ],
   },
   {
     label: "People",
     items: [
-      { linkTo: "/engagement-manager", icon: User, name: "Engagement Manager" },
-      { linkTo: "/consultant", icon: Users, name: "Consultants" },
+      {
+        linkTo: "/engagement-manager",
+        icon: User,
+        name: "Engagement Manager",
+        allowedRoles: ["UNIT_MANAGER"],
+      },
+      {
+        linkTo: "/consultant",
+        icon: Users,
+        name: "Consultants",
+        allowedRoles: ["UNIT_MANAGER"],
+      },
     ],
   },
   {
     label: "Reporting",
     items: [
-      { linkTo: "/sheets", icon: TableProperties, name: "Progress Table" },
+      {
+        linkTo: "/sheets",
+        icon: TableProperties,
+        name: "Progress Table",
+        allowedRoles: ["UNIT_MANAGER"],
+      },
       { linkTo: "/kpi", icon: ChartColumnBig, name: "KPIs" },
     ],
   },
@@ -64,16 +93,15 @@ export function NavSidebar() {
   const { state, toggleSidebar, isMobile } = useSidebar();
   const pathname = usePathname();
   const isExpanded = state === "expanded";
-
-  // Single reusable class for anything that should fade/slide in on expand
-  // and cleanly hide on collapse. `truncate` + `min-w-0` on the wrapping flex
-  // item is what prevents the old mid-word clipping bug on small screens.
-  //
-  // On mobile the sidebar renders inside a Sheet, where `state` stays
-  // "collapsed" / `collapsible=icon` still applies even though the sheet is
-  // fully open — that's what was hiding the labels down to icon-only. On
-  // mobile we always want full labels, so we skip the collapse-driven
-  // classes entirely there.
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) =>
+          !item.allowedRoles || item.allowedRoles.includes(role as Role),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
   const revealText = isMobile
     ? "truncate opacity-100 translate-x-0"
     : "truncate opacity-0 -translate-x-1 transition-all duration-200 ease-out " +
@@ -139,7 +167,7 @@ export function NavSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:pl-0.5">
-        {navGroups.map((group, idx) => (
+        {visibleGroups.map((group, idx) => (
           <SidebarGroup
             key={group.label}
             className="group-data-[collapsible=icon]:py-0"

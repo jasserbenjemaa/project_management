@@ -1,5 +1,6 @@
 "use client";
 import {
+  ScrollText,
   FolderOpen,
   User,
   Users,
@@ -9,8 +10,10 @@ import {
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import SubCard from "@/components/sub-card";
 import Image from "next/image";
+import { useUser } from "@/context/user-context";
+import { Role } from "../generated/prisma/enums";
 const Home = () => {
-  const name = "Jasser Ben Jomaa";
+  const { name, role } = useUser();
 
   const dateText = (): string => {
     const now = new Date();
@@ -26,8 +29,18 @@ const Home = () => {
     name: string;
     color: string;
     description: string;
+    allowedRoles?: ("UNIT_MANAGER" | "ENGAGEMENT_MANAGER" | "CONSULTANT")[];
   }
-  const cards: CardData[] = [
+  const allCards: CardData[] = [
+    {
+      linkTo: "/projects/history",
+      imageUrl: "/campgemini_values/boldness.svg",
+      icon: ScrollText,
+      name: "Projects history",
+      color: "red",
+      description: "Track project history",
+      allowedRoles: ["ENGAGEMENT_MANAGER", "CONSULTANT"],
+    },
     {
       linkTo: "/projects",
       imageUrl: "/campgemini_values/team_spirit.svg",
@@ -43,6 +56,7 @@ const Home = () => {
       name: "Engagement Manager",
       color: "orange",
       description: "Browse and manage engagement managers",
+      allowedRoles: ["UNIT_MANAGER"],
     },
     {
       linkTo: "/consultant",
@@ -51,6 +65,7 @@ const Home = () => {
       name: "Consultants",
       color: "purple",
       description: "Browse, add, and manage consultants",
+      allowedRoles: ["UNIT_MANAGER"],
     },
     {
       linkTo: "/kpi",
@@ -61,6 +76,9 @@ const Home = () => {
       description: "View performance metrics and KPIs",
     },
   ];
+  const cards = allCards.filter(
+    (card) => !card.allowedRoles || card.allowedRoles.includes(role as Role),
+  );
   return (
     <>
       <div className=" flex-1 overflow-y-auto p-6 flex flex-col gap-6">

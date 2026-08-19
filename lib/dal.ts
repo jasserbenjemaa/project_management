@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { getSession } from "./auth";
-
+import type { ProjectStatus } from "@/features/projects-columns";
 export const getCurrentUser = async () => {
   const session = await getSession();
   if (!session) return null;
@@ -59,4 +59,74 @@ export async function getUserOptions() {
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
+}
+const serializeProject = (project: {
+  id: string;
+  name: string;
+  status: ProjectStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}) => ({
+  ...project,
+  createdAt: project.createdAt.toISOString(),
+  updatedAt: project.updatedAt.toISOString(),
+});
+
+export async function getCurrentUserProjects() {
+  const session = await getSession();
+  if (!session) {
+    throw new Error("Not authenticated");
+  }
+  const userId = session.userId;
+  if (!userId) return null;
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const projects = await db.project.findMany({
+    where:
+      user.role === "UNIT_MANAGER"
+        ? undefined
+        : {
+            assignments: {
+              some: { userId: session.userId },
+            },
+          },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return projects.map(serializeProject);
+}
+export async function getHistory() {
+  try {
+    const session = await getSession();
+    if (!session) return null;
+    const userId = session.userId;
+    if (!userId) return null;
+    const history = await db.assignment.findMany({
+      where: { userId: userId },
+      orderBy: { startDate: "desc" },
+      select: {
+        id: true,
+        roleOnProject: true,
+        startDate: true,
+        endDate: true,
+        projectName: true, // snapshot, always available
+        projectId: true,
+        project: {
+          // live relation, null if project was deleted
+          select: { status: true },
+        },
+      },
+    });
+    return history;
+  } catch (e) {
+    console.log("error in getting user projects history: ", e);
+  }
 }
