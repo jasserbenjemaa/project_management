@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateSettings } from "./actions";
+import { updateSettings } from "@/app/(dashboard)/settings/action";
 
 // Les valeurs possibles pour le rôle, comme dans ton schéma Prisma
 const ROLES = ["UNIT_MANAGER", "ENGAGEMENT_MANAGER", "CONSULTANT"];
@@ -116,7 +116,10 @@ export default function SettingsForm({ user }: { user: SettingsUser }) {
 
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
-          <Select value={role} onValueChange={setRole}>
+          <Select
+            value={role}
+            onValueChange={(newValue) => setRole(newValue ?? "")}
+          >
             <SelectTrigger id="role">
               <SelectValue placeholder="Select a role" />
             </SelectTrigger>
