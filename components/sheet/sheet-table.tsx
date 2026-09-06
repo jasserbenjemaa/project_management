@@ -14,6 +14,7 @@ import {
   getMiddleCenterBias,
   DrawArgs,
   Rectangle,
+  DataEditorRef,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
 
@@ -319,6 +320,34 @@ const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
 };
 
 const KO_HIGHLIGHT_COL_IDS = new Set(["iqa", "commentLLT"]);
+
+// ---- Adding / removing columns (header menu + trailing "+" button) -----
+const NEW_COLUMN_WIDTH = 140;
+
+let columnIdCounter = 0;
+const genColumnId = () => {
+  columnIdCounter += 1;
+  return `col_${Date.now().toString(36)}_${columnIdCounter}`;
+};
+
+interface HeaderMenuState {
+  colIndex: number;
+  colId: string;
+  bounds: Rectangle;
+}
+
+const headerMenuItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  width: "100%",
+  textAlign: "left",
+  padding: "8px 10px",
+  border: "none",
+  background: "transparent",
+  color: "#111827",
+  fontSize: 13,
+  cursor: "pointer",
+};
 
 const initialColumns: GridColumn[] = [
   { title: "Priority", id: "priority", width: 90 },
@@ -732,6 +761,110 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     );
   }, []);
 
+  // --- Insert a brand new (blank, free-text) column at a given index ---
+  const insertColumnAt = useCallback((index: number, title = "New column") => {
+    const newId = genColumnId();
+    setColumns((prev) => {
+      const next = [...prev];
+      const clampedIndex = Math.max(0, Math.min(index, next.length));
+      next.splice(clampedIndex, 0, {
+        title,
+        id: newId,
+        width: NEW_COLUMN_WIDTH,
+      });
+      return next;
+    });
+    return newId;
+  }, []);
+
+  // Ref to the grid so we can scroll the newly appended column into view.
+  const gridRef = useRef<DataEditorRef>(null);
+
+  // Appends a new column at the very end — used by the trailing "+" button.
+  const appendColumn = useCallback(() => {
+    const newIndex = columns.length;
+    insertColumnAt(newIndex);
+    // Wait a tick for the column to actually land in state before scrolling.
+    requestAnimationFrame(() => {
+      gridRef.current?.scrollTo(newIndex, 0, "horizontal");
+    });
+  }, [columns.length, insertColumnAt]);
+
+  // --- Column header menu: insert left/right, rename, delete ---
+  const [headerMenu, setHeaderMenu] = useState<HeaderMenuState | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const headerMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const onHeaderMenuClick = useCallback(
+    (colIndex: number, bounds: Rectangle) => {
+      const col = columns[colIndex];
+      if (!col?.id) return;
+      setRenameValue(String(col.title ?? ""));
+      setHeaderMenu({ colIndex, colId: col.id, bounds });
+    },
+    [columns],
+  );
+
+  // Close the header menu on outside click or Escape.
+  useEffect(() => {
+    if (!headerMenu) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (
+        headerMenuRef.current &&
+        !headerMenuRef.current.contains(e.target as Node)
+      ) {
+        setHeaderMenu(null);
+      }
+    };
+    const onDocKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHeaderMenu(null);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onDocKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onDocKeyDown);
+    };
+  }, [headerMenu]);
+
+  const insertColumnLeft = useCallback(() => {
+    if (!headerMenu) return;
+    insertColumnAt(headerMenu.colIndex);
+    setHeaderMenu(null);
+  }, [headerMenu, insertColumnAt]);
+
+  const insertColumnRight = useCallback(() => {
+    if (!headerMenu) return;
+    insertColumnAt(headerMenu.colIndex + 1);
+    setHeaderMenu(null);
+  }, [headerMenu, insertColumnAt]);
+
+  const renameHeaderMenuColumn = useCallback(() => {
+    if (!headerMenu) return;
+    const colId = headerMenu.colId;
+    setColumns((prev) =>
+      prev.map((c) =>
+        c.id === colId ? { ...c, title: renameValue.trim() || c.title } : c,
+      ),
+    );
+    setHeaderMenu(null);
+  }, [headerMenu, renameValue]);
+
+  const deleteHeaderMenuColumn = useCallback(() => {
+    if (!headerMenu) return;
+    const colId = headerMenu.colId;
+    setColumns((prev) => prev.filter((c) => c.id !== colId));
+    setData((prev) =>
+      prev.map((row) => {
+        if (!(colId in row)) return row;
+        const next = { ...row };
+        delete next[colId];
+        return next;
+      }),
+    );
+    setHeaderMenu(null);
+  }, [headerMenu]);
+
   // Only rows that actually have content matter for sizing (and saving) —
   // the infinite blank buffer below them shouldn't be measured on every
   // scroll-append, nor written to the database.
@@ -931,16 +1064,61 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     [selection, deleteSelected],
   );
 
+  // Every column needs `hasMenu: true` so the grid draws the little
+  // dropdown-menu affordance in its header, which opens the insert/rename/
+  // delete popover below.
+  const columnsWithMenu = useMemo(
+    () => columns.map((c) => ({ ...c, hasMenu: true })),
+    [columns],
+  );
+
+  // Slim "+" button pinned to the right edge of the grid, for appending a
+  // brand new column — the "New Column Button" pattern.
+  const addColumnButton = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={appendColumn}
+        title="Add column"
+        style={{
+          width: 36,
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: "none",
+          borderLeft: "1px solid #e5e7eb",
+          background: "#f9fafb",
+          color: "#6b7280",
+          fontSize: 18,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "#f3f4f6";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "#f9fafb";
+        }}
+      >
+        +
+      </button>
+    ),
+    [appendColumn],
+  );
+
   return (
     <div className="flex flex-col h-full" onKeyDown={onKeyDown}>
       <div className="h-full rounded-xl overflow-hidden border border-gray-200">
         <DataEditor
+          ref={gridRef}
           getCellContent={getCellContent}
-          columns={columns}
+          columns={columnsWithMenu}
           rows={data.length}
           rowHeight={getRowHeight}
           onCellEdited={onCellEdited}
           onColumnResize={onColumnResize}
+          onHeaderMenuClick={onHeaderMenuClick}
           onVisibleRegionChanged={onVisibleRegionChanged}
           rowMarkers="both"
           gridSelection={selection}
@@ -950,6 +1128,8 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
           rowSelect="multi"
           getCellsForSelection={true}
           width="100%"
+          rightElement={addColumnButton}
+          rightElementProps={{ sticky: true }}
           customRenderers={[
             testStatusCellRenderer,
             authorSuggestCellRenderer,
@@ -963,6 +1143,97 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
           }}
         />
       </div>
+
+      {headerMenu && (
+        <div
+          ref={headerMenuRef}
+          style={{
+            position: "fixed",
+            left: Math.min(
+              headerMenu.bounds.x,
+              (typeof window !== "undefined" ? window.innerWidth : 1200) - 200,
+            ),
+            top: headerMenu.bounds.y + headerMenu.bounds.height + 2,
+            zIndex: 50,
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+            minWidth: 200,
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ padding: 8, borderBottom: "1px solid #f3f4f6" }}>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  renameHeaderMenuColumn();
+                } else if (e.key === "Escape") {
+                  setHeaderMenu(null);
+                }
+              }}
+              placeholder="Column name"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "6px 8px",
+                border: "1px solid #e5e7eb",
+                borderRadius: 6,
+                fontSize: 13,
+                outline: "none",
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertColumnLeft();
+            }}
+            style={headerMenuItemStyle}
+          >
+            <span style={{ marginRight: 8 }}>←</span> Insert column left
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertColumnRight();
+            }}
+            style={headerMenuItemStyle}
+          >
+            <span style={{ marginRight: 8 }}>→</span> Insert column right
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              renameHeaderMenuColumn();
+            }}
+            style={{ ...headerMenuItemStyle, borderTop: "1px solid #f3f4f6" }}
+          >
+            Rename column
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              deleteHeaderMenuColumn();
+            }}
+            style={{
+              ...headerMenuItemStyle,
+              borderTop: "1px solid #f3f4f6",
+              color: "#b91c1c",
+            }}
+          >
+            Delete column
+          </button>
+        </div>
+      )}
     </div>
   );
 };
