@@ -16,6 +16,7 @@ import {
   Rectangle,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
+import * as XLSX from "xlsx";
 
 // Adjust these import paths to wherever you put the action files.
 import { loadSheet, saveSheet } from "@/app/actions/sheet";
@@ -464,6 +465,27 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+
+  // --- Excel import/export + drag & drop state ---
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [importStatus, setImportStatus] = useState<
+    "idle" | "importing" | "error"
+  >("idle");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close the ⋮ menu when clicking anywhere outside of it.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMenuOpen]);
 
   // Users for the Author LLR / Author LLT autocomplete dropdowns. Fetched
   // once — a project's user list doesn't change often enough to warrant
@@ -931,9 +953,170 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     [selection, deleteSelected],
   );
 
+  // --- Export: build an .xlsx file from the currently filled rows ---
+  const handleExportExcel = useCallback(() => {
+    const exportRows = filledRows.map((row) => {
+      const obj: Record<string, string> = {};
+      columns.forEach((col) => {
+        if (col.id) obj[String(col.title)] = row[col.id] ?? "";
+      });
+      return obj;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Progress Sheet");
+    XLSX.writeFile(workbook, `progress-sheet-${sheetId}.xlsx`);
+  }, [columns, filledRows, sheetId]);
+
+  // --- Import: read a dropped/selected .xlsx file and fill the grid ---
+  const handleImportFile = useCallback(
+    (file: File) => {
+      setImportStatus("importing");
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result;
+          if (!buffer) throw new Error("Empty file");
+
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+
+          // Each row comes back keyed by the Excel header text
+          // (e.g. "Priority", "LLR ID") — we map those headers back
+          // to our internal column ids (e.g. "priority", "llrId").
+          const excelRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+            worksheet,
+            { defval: "" },
+          );
+
+          const titleToId = new Map(
+            columns.map((c) => [String(c.title).trim(), c.id]),
+          );
+
+          const importedRows: RowData[] = excelRows.map((excelRow) => {
+            const row: RowData = {};
+            Object.entries(excelRow).forEach(([title, value]) => {
+              const id = titleToId.get(title.trim());
+              if (id) row[id] = String(value ?? "");
+            });
+            return row;
+          });
+
+          setData([
+            ...importedRows,
+            ...Array.from({ length: INITIAL_BUFFER }, () =>
+              createEmptyRow(columns),
+            ),
+          ]);
+          setImportStatus("idle");
+        } catch (err) {
+          console.error("Failed to import Excel file", err);
+          setImportStatus("error");
+        }
+      };
+      reader.onerror = () => setImportStatus("error");
+      reader.readAsArrayBuffer(file);
+    },
+    [columns],
+  );
+
+  const onFileInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) handleImportFile(file);
+      // reset so selecting the same file again still fires onChange
+      event.target.value = "";
+    },
+    [handleImportFile],
+  );
+
+  // --- Drag & drop: dropping a file anywhere on the grid imports it ---
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDraggingFile(true);
+  }, []);
+
+  const onDragLeave = useCallback((event: React.DragEvent) => {
+    // Only clear when actually leaving the container, not moving between
+    // its children (which fires dragleave/dragenter repeatedly).
+    if (event.currentTarget === event.target) {
+      setIsDraggingFile(false);
+    }
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      setIsDraggingFile(false);
+      const file = event.dataTransfer.files?.[0];
+      if (file) handleImportFile(file);
+    },
+    [handleImportFile],
+  );
+
   return (
     <div className="flex flex-col h-full" onKeyDown={onKeyDown}>
-      <div className="h-full rounded-xl overflow-hidden border border-gray-200">
+      {/* Toolbar: "⋮" menu with Save as Excel / Import Excel file */}
+      <div className="flex justify-end mb-2 relative" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setIsMenuOpen((open) => !open)}
+          className="px-2 py-1 rounded-md hover:bg-gray-100 text-gray-600 text-lg leading-none"
+          aria-label="Sheet options"
+        >
+          ⋮
+        </button>
+
+        {isMenuOpen && (
+          <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => {
+                handleExportExcel();
+                setIsMenuOpen(false);
+              }}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Save as Excel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                fileInputRef.current?.click();
+                setIsMenuOpen(false);
+              }}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Import Excel file
+            </button>
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={onFileInputChange}
+        />
+      </div>
+
+      {importStatus === "error" && (
+        <div className="mb-2 text-sm text-red-600">
+          Failed to import this file — please check it's a valid .xlsx file.
+        </div>
+      )}
+
+      {/* Grid + drag & drop zone */}
+      <div
+        className="relative h-full rounded-xl overflow-hidden border border-gray-200"
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         <DataEditor
           getCellContent={getCellContent}
           columns={columns}
@@ -962,6 +1145,14 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
             horizontalBorderColor: "#e5e7eb",
           }}
         />
+
+        {isDraggingFile && (
+          <div className="absolute inset-0 flex items-center justify-center bg-blue-50/90 border-2 border-dashed border-blue-400 pointer-events-none z-10">
+            <p className="text-blue-700 font-medium text-sm">
+              Drop your Excel file to import it
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
