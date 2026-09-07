@@ -63,7 +63,7 @@ const navGroups: {
       {
         linkTo: "/engagement-manager",
         icon: User,
-        name: "Engagement Manager",
+        name: "Engagement Managers",
         allowedRoles: ["UNIT_MANAGER"],
       },
       {

@@ -211,8 +211,13 @@ export async function getUserSuggestions(): Promise<UserSuggestion[]> {
     artifactType: u.artifact_type,
   }));
 }
+export async function assignUserToProject(
+  userId: string,
+  projectId: string,
+  roleOnProject?: Role,
+) {
+  const assignedById = await requireCurrentUserId();
 
-export async function assignUserToProject(userId: string, projectId: string) {
   const [user, project] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: userId } }),
     db.project.findUniqueOrThrow({ where: { id: projectId } }),
@@ -230,12 +235,13 @@ export async function assignUserToProject(userId: string, projectId: string) {
       userName: user.name,
       userEmail: user.email,
       projectName: project.name,
+      ...(roleOnProject ? { roleOnProject } : {}),
     },
     create: {
       userId,
       projectId,
-      assignedById: userId, // TODO: replace with the current session user's id
-      roleOnProject: user.role,
+      assignedById,
+      roleOnProject: roleOnProject ?? user.role,
       startDate: new Date(),
       userName: user.name,
       userEmail: user.email,

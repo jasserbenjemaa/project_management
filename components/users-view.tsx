@@ -27,6 +27,7 @@ import { getUserColumns, ROLE_CONFIG, UserRow } from "@/features/users-columns";
 import { UserFormDialog } from "@/features/users-form-dialog";
 import { DeleteUserDialog } from "@/features/users-delete-dialog";
 import { AssignUsersDialog } from "@/features/assign-users-dialog";
+import type { Role } from "@/app/generated/prisma/enums";
 import {
   ARTIFACT_TABS,
   ArtifactTab,
@@ -50,7 +51,9 @@ interface UsersViewProps {
   // to it, and "New" becomes "Assign" (opens AssignUsersDialog instead of
   // the create form).
   fixedProject?: { id: string; name: string };
-  // When set, locks the role filter to this role (e.g. "CONSULTANT").
+  // When set, locks the role filter to this role (e.g. "CONSULTANT"), and
+  // the "New" button creates a user with this role directly - no role
+  // picker shown in the dialog, since there's nothing to choose.
   fixedRole?: string;
   // Controls whether the create button renders at all when there's no
   // fixedProject. Defaults to true so existing pages keep working.
@@ -140,6 +143,7 @@ export const UsersView = ({
 
   const showAssignButton = !!fixedProject;
   const showNewButton = !fixedProject && allowCreate;
+  const newButtonLabel = "New";
 
   return (
     <>
@@ -182,7 +186,7 @@ export const UsersView = ({
                 onClick={handleAddUser}
               >
                 <PlusIcon className="size-4 mr-2" />
-                New
+                {newButtonLabel}
               </Button>
             )}
           </div>
@@ -287,6 +291,7 @@ export const UsersView = ({
         projects={projects}
         userOptions={userOptions}
         defaultValues={editingUser ? undefined : createDefaults}
+        fixedRole={editingUser ? undefined : (fixedRole as Role | undefined)}
         onSaved={() => router.refresh()}
       />
 

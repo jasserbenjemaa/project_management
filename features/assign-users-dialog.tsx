@@ -11,7 +11,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { UserRow } from "@/features/users-columns";
 import {
@@ -28,11 +28,12 @@ interface AssignUsersDialogProps {
   onAssigned?: () => void;
 }
 
-type ScopeTab = "all" | "unassigned" | "assigned";
+type ScopeTab = "all" | "unassigned-here" | "unassigned-any" | "assigned";
 
 const SCOPE_TAB_LABELS: Record<ScopeTab, string> = {
   all: "All",
-  unassigned: "Not Assigned",
+  "unassigned-here": "Not On This Project",
+  "unassigned-any": "No Project",
   assigned: "Assigned",
 };
 
@@ -67,12 +68,15 @@ export const AssignUsersDialog = ({
         user.email.toLowerCase().includes(q);
 
       const isAssignedHere = user.projects.some((p) => p.id === projectId);
+
       const matchesTab =
         tab === "all"
           ? true
-          : tab === "unassigned"
-            ? user.projects.length === 0
-            : isAssignedHere;
+          : tab === "assigned"
+            ? isAssignedHere
+            : tab === "unassigned-here"
+              ? !isAssignedHere
+              : /* unassigned-any */ user.projects.length === 0;
 
       return matchesSearch && matchesTab;
     });
@@ -97,7 +101,7 @@ export const AssignUsersDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UsersIcon className="size-4" />
@@ -119,7 +123,7 @@ export const AssignUsersDialog = ({
         >
           <TabsList className="w-full shrink-0">
             {(Object.keys(SCOPE_TAB_LABELS) as ScopeTab[]).map((t) => (
-              <TabsTrigger key={t} value={t} className="flex-1">
+              <TabsTrigger key={t} value={t} className="flex-1 text-xs">
                 {SCOPE_TAB_LABELS[t]}
               </TabsTrigger>
             ))}
@@ -133,23 +137,36 @@ export const AssignUsersDialog = ({
             >
               <div className="flex flex-col gap-1 pr-2">
                 {filtered.map((user) => {
-                  const currentProject = user.projects[0];
-                  const isAssignedHere = currentProject?.id === projectId;
-                  const isOnOtherProject = currentProject && !isAssignedHere;
+                  const isAssignedHere = user.projects.some(
+                    (p) => p.id === projectId,
+                  );
+                  const otherProjects = user.projects.filter(
+                    (p) => p.id !== projectId,
+                  );
                   const isLoading = isPending && pendingId === user.id;
 
                   return (
                     <div
                       key={user.id}
-                      className="flex items-center justify-between rounded-md px-2 py-2 hover:bg-muted/50"
+                      className="flex items-center justify-between gap-2 rounded-md px-2 py-2 hover:bg-muted/50"
                     >
                       <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-medium truncate">
-                          {user.name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">
+                            {user.name}
+                          </span>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                          >
+                            {user.role}
+                          </Badge>
+                        </div>
                         <span className="text-xs text-muted-foreground truncate">
-                          {isOnOtherProject
-                            ? `Currently on ${currentProject.name} — click to reassign`
+                          {otherProjects.length > 0
+                            ? `Also on ${otherProjects
+                                .map((p) => p.name)
+                                .join(", ")}`
                             : user.email}
                         </span>
                       </div>

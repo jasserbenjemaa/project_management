@@ -319,6 +319,60 @@ const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
   onPaste: (val, cellData) => ({ ...cellData, text: val }),
 };
 
+// ---- Row-number column (Excel-style hidden-row indicator) ----
+// The built-in glide-data-grid row marker only ever numbers rows 1..N in
+// display order, so hiding rows 3-4 out of 1-5 would still show 1,2,3 for
+// what's left — no sign anything is missing. Instead we render our own
+// pinned "#" column showing each row's *real* index (so hiding 3-4 shows
+// 1, 2, 5), plus a small double-line marker — the same affordance Excel
+// and Google Sheets use — whenever rows are hidden directly above.
+const ROW_NUMBER_COL_ID = "__rowNumber";
+const ROW_NUMBER_COL_WIDTH = 52;
+
+interface RowNumberCellProps {
+  readonly kind: "row-number-cell";
+  readonly rowNumber: number; // 1-based, real index into `data`
+  readonly hiddenAboveCount: number; // hidden rows directly above this one
+}
+type RowNumberCell = CustomCell<RowNumberCellProps>;
+
+const rowNumberCellRenderer: CustomRenderer<RowNumberCell> = {
+  kind: GridCellKind.Custom,
+  isMatch: (cell): cell is RowNumberCell =>
+    (cell.data as any)?.kind === "row-number-cell",
+  draw: (args: DrawArgs<RowNumberCell>) => {
+    const { ctx, theme, rect, cell } = args;
+    const { rowNumber, hiddenAboveCount } = cell.data;
+
+    ctx.save();
+
+    if (hiddenAboveCount > 0) {
+      ctx.strokeStyle = "#6366f1";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(rect.x + 4, rect.y + 2);
+      ctx.lineTo(rect.x + rect.width - 4, rect.y + 2);
+      ctx.moveTo(rect.x + 4, rect.y + 5);
+      ctx.lineTo(rect.x + rect.width - 4, rect.y + 5);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = hiddenAboveCount > 0 ? "#4f46e5" : theme.textLight;
+    ctx.font = `${hiddenAboveCount > 0 ? "600 " : ""}12px ${theme.fontFamily}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      String(rowNumber),
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2 + (hiddenAboveCount > 0 ? 3 : 0),
+    );
+
+    ctx.restore();
+    return true;
+  },
+  onPaste: (_val, cellData) => cellData,
+};
+
 const KO_HIGHLIGHT_COL_IDS = new Set(["iqa", "commentLLT"]);
 
 // ---- Adding / removing columns (header menu + trailing "+" button) -----
@@ -333,6 +387,12 @@ const genColumnId = () => {
 interface HeaderMenuState {
   colIndex: number;
   colId: string;
+  bounds: Rectangle;
+}
+
+interface RowMenuState {
+  rowIndex: number; // actual index into `data`
+  visRow: number; // position among currently-visible rows
   bounds: Rectangle;
 }
 
@@ -401,12 +461,12 @@ const emptySelection: GridSelection = {
   current: undefined,
 };
 
-// --- Infinite scroll helpers ---
-// We keep a buffer of blank rows past the last visible row so the sheet
-// never visibly "runs out" — as the user scrolls further down, more rows
-// are appended on the fly, similar to Excel/Google Sheets.
-const ROW_BUFFER = 60; // rows kept ready below what's currently visible
-const INITIAL_BUFFER = 80; // rows to pad with on first load
+// --- Starter blank rows ---
+// A fixed pad of blank rows is added once on first load so there's room
+// to type into right away. Unlike before, nothing is auto-appended while
+// scrolling — new rows only come from the "+" button or the row menu's
+// insert above/below.
+const STARTER_BLANK_ROWS = 20;
 
 const createEmptyRow = (cols: GridColumn[]): RowData => {
   const row: RowData = {};
@@ -417,7 +477,7 @@ const createEmptyRow = (cols: GridColumn[]): RowData => {
 };
 
 const buildInitialData = (): RowData[] => [
-  ...Array.from({ length: INITIAL_BUFFER }, () =>
+  ...Array.from({ length: STARTER_BLANK_ROWS }, () =>
     createEmptyRow(initialColumns),
   ),
 ];
@@ -481,11 +541,52 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   const [columns, setColumns] = useState<GridColumn[]>(initialColumns);
   const [data, setData] = useState<RowData[]>(() => [
     ...initialRows,
-    ...Array.from({ length: INITIAL_BUFFER }, () =>
+    ...Array.from({ length: STARTER_BLANK_ROWS }, () =>
       createEmptyRow(initialColumns),
     ),
   ]);
   const [selection, setSelection] = useState<GridSelection>(emptySelection);
+
+  // --- Hidden rows (Excel-style hide/unhide) ---
+  // Stores actual `data` indices, not grid-visible positions. Not
+  // persisted to the DB — purely a view-state toggle, same as scroll
+  // position. Ask if you'd like this saved per-sheet instead.
+  const [hiddenRows, setHiddenRows] = useState<Set<number>>(new Set());
+
+  // --- Column filters (Excel-style "check the values you want to keep") ---
+  // Keyed by column id. A column with no entry here has no filter applied.
+  // The value inside is the SET OF VALUES TO KEEP for that column — a row
+  // passes a column's filter if its value for that column is in the set.
+  // Not persisted, same as hiddenRows — purely a view-state toggle.
+  const [columnFilters, setColumnFilters] = useState<
+    Record<string, Set<string>>
+  >({});
+  const activeFilterCount = Object.keys(columnFilters).length;
+
+  // The list of actual `data` indices that are currently visible, in
+  // order. This is the translation layer between "grid row" (what glide-
+  // data-grid renders, 0..visibleRowIndices.length-1) and "data row"
+  // (the real index into `data`, which is what everything else in this
+  // file — insertRowAt, persistNow, etc. — already works in terms of).
+  const activeFilterEntries = useMemo(
+    () => Object.entries(columnFilters),
+    [columnFilters],
+  );
+  const visibleRowIndices = useMemo(() => {
+    const arr: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+      if (hiddenRows.has(i)) continue;
+      if (activeFilterEntries.length > 0) {
+        const row = data[i];
+        const passesAllFilters = activeFilterEntries.every(
+          ([colId, allowedValues]) => allowedValues.has(row?.[colId] ?? ""),
+        );
+        if (!passesAllFilters) continue;
+      }
+      arr.push(i);
+    }
+    return arr;
+  }, [data, hiddenRows, activeFilterEntries]);
 
   // Gate autosave until the initial load has resolved, so we don't
   // immediately overwrite saved data with the default seed/buffer.
@@ -558,12 +659,11 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
               : initialColumns;
 
           setColumns(loadedColumns);
-          setData([
-            ...saved.rows,
-            ...Array.from({ length: INITIAL_BUFFER }, () =>
-              createEmptyRow(loadedColumns),
-            ),
-          ]);
+          // Saved rows now already include whatever blank rows were on the
+          // sheet at last save (we save data as-is, not just filled rows),
+          // so no extra padding is added here — doing so would make the
+          // sheet grow a little more every time it's loaded and saved.
+          setData(saved.rows);
         }
         // If nothing saved yet, keep the default seed/buffer that's
         // already in state — this becomes the first autosave.
@@ -582,8 +682,26 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   // --- Read a cell ---
   const getCellContent = useCallback(
     (cell: Item): GridCell => {
-      const [col, row] = cell;
-      const colId = columns[col]?.id ?? "";
+      const [col, visRow] = cell;
+      const row = visibleRowIndices[visRow] ?? visRow;
+
+      if (col === 0) {
+        const prevRow = visRow > 0 ? visibleRowIndices[visRow - 1] : -1;
+        const rowNumberCell: RowNumberCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: false,
+          copyData: String(row + 1),
+          data: {
+            kind: "row-number-cell",
+            rowNumber: row + 1,
+            hiddenAboveCount: Math.max(0, row - prevRow - 1),
+          },
+        };
+        return rowNumberCell;
+      }
+
+      const dataCol = col - 1;
+      const colId = columns[dataCol]?.id ?? "";
       const dataRow = data[row];
       const value = dataRow?.[colId] ?? "";
 
@@ -664,14 +782,16 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
         themeOverride: shouldHighlight ? { bgCell: "#fef2f2" } : undefined,
       } as GridCell;
     },
-    [columns, data, authorSuggestionsByCol],
+    [columns, data, authorSuggestionsByCol, visibleRowIndices],
   );
 
   // --- Edit a cell ---
   const onCellEdited = useCallback(
     (cell: Item, newValue: EditableGridCell) => {
-      const [col, row] = cell;
-      const colId = columns[col]?.id;
+      const [col, visRow] = cell;
+      if (col === 0) return; // row-number column is display-only
+      const row = visibleRowIndices[visRow] ?? visRow;
+      const colId = columns[col - 1]?.id;
       if (!colId) return;
 
       if (
@@ -734,48 +854,89 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
         return next;
       });
     },
-    [columns],
+    [columns, visibleRowIndices],
   );
 
-  // --- Keep topping up blank rows as the user scrolls down (infinite feel) ---
-  const onVisibleRegionChanged = useCallback(
-    (range: Rectangle) => {
-      const lastVisibleRow = range.y + range.height;
-      setData((prev) => {
-        if (lastVisibleRow + ROW_BUFFER / 2 < prev.length) return prev;
-        const rowsToAdd = lastVisibleRow + ROW_BUFFER - prev.length;
-        if (rowsToAdd <= 0) return prev;
-        return [
-          ...prev,
-          ...Array.from({ length: rowsToAdd }, () => createEmptyRow(columns)),
-        ];
-      });
+  // --- Autosave machinery ---
+  // `saveTimeoutRef` backs the debounced effect below (for typing), but
+  // `persistNow` bypasses that debounce entirely for structural edits —
+  // inserting/deleting a row or column. Those should never be lost just
+  // because the user refreshed within the debounce window.
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persistNow = useCallback(
+    (nextData: RowData[], nextColumns: GridColumn[] = columns) => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      setSaveStatus("saving");
+      saveSheet(
+        sheetId,
+        nextColumns
+          .filter((c) => c.id)
+          .map((c) => ({
+            id: c.id as string,
+            title: String(c.title ?? ""),
+            width: c.width,
+          })),
+        nextData,
+      )
+        .then(() => setSaveStatus("saved"))
+        .catch((err) => {
+          console.error("Failed to save sheet", err);
+          setSaveStatus("error");
+        });
     },
-    [columns],
+    [columns, sheetId],
   );
 
   // --- Column resize (manual drag) ---
   const onColumnResize = useCallback((column: GridColumn, newSize: number) => {
+    if (column.id === ROW_NUMBER_COL_ID) return;
     setColumns((prev) =>
       prev.map((c) => (c.id === column.id ? { ...c, width: newSize } : c)),
     );
   }, []);
 
   // --- Insert a brand new (blank, free-text) column at a given index ---
-  const insertColumnAt = useCallback((index: number, title = "New column") => {
-    const newId = genColumnId();
-    setColumns((prev) => {
-      const next = [...prev];
-      const clampedIndex = Math.max(0, Math.min(index, next.length));
-      next.splice(clampedIndex, 0, {
+  const insertColumnAt = useCallback(
+    (index: number, title = "New column") => {
+      const newId = genColumnId();
+      const nextColumns = [...columns];
+      const clampedIndex = Math.max(0, Math.min(index, nextColumns.length));
+      nextColumns.splice(clampedIndex, 0, {
         title,
         id: newId,
         width: NEW_COLUMN_WIDTH,
       });
-      return next;
-    });
-    return newId;
-  }, []);
+      setColumns(nextColumns);
+      // Structural edit — save right away, don't wait for the typing debounce.
+      // (Called after setState, not inside its updater — updaters can run
+      // during React's render phase, where side effects aren't allowed.)
+      persistNow(data, nextColumns);
+      return newId;
+    },
+    [columns, data, persistNow],
+  );
+
+  // --- Insert a brand new (blank) row at a given index ---
+  const insertRowAt = useCallback(
+    (index: number) => {
+      const next = [...data];
+      const clampedIndex = Math.max(0, Math.min(index, next.length));
+      next.splice(clampedIndex, 0, createEmptyRow(columns));
+      setData(next);
+      // Hidden-row indices at/after the insertion point need to shift up
+      // by one so they keep pointing at the same rows.
+      setHiddenRows((prev) => {
+        if (prev.size === 0) return prev;
+        const shifted = new Set<number>();
+        prev.forEach((i) => shifted.add(i >= clampedIndex ? i + 1 : i));
+        return shifted;
+      });
+      // Structural edit — save right away, don't wait for the typing debounce.
+      persistNow(next);
+    },
+    [data, columns, persistNow],
+  );
 
   // Ref to the grid so we can scroll the newly appended column into view.
   const gridRef = useRef<DataEditorRef>(null);
@@ -790,6 +951,19 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     });
   }, [columns.length, insertColumnAt]);
 
+  // Appends a new row at the very end — used by the "+ Add row" footer
+  // button now that rows no longer auto-append while scrolling.
+  const appendRow = useCallback(() => {
+    const newDataIndex = data.length;
+    // The appended row always lands at the very end and is never hidden,
+    // so its visible-grid position is simply the current visible count.
+    const newVisRow = visibleRowIndices.length;
+    insertRowAt(newDataIndex);
+    requestAnimationFrame(() => {
+      gridRef.current?.scrollTo(0, newVisRow, "vertical");
+    });
+  }, [data.length, visibleRowIndices.length, insertRowAt]);
+
   // --- Column header menu: insert left/right, rename, delete ---
   const [headerMenu, setHeaderMenu] = useState<HeaderMenuState | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -797,12 +971,28 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
 
   const onHeaderMenuClick = useCallback(
     (colIndex: number, bounds: Rectangle) => {
-      const col = columns[colIndex];
+      if (colIndex === 0) return; // pinned row-number column has no menu
+      const dataColIndex = colIndex - 1;
+      const col = columns[dataColIndex];
       if (!col?.id) return;
       setRenameValue(String(col.title ?? ""));
-      setHeaderMenu({ colIndex, colId: col.id, bounds });
+      setHeaderMenu({ colIndex: dataColIndex, colId: col.id, bounds });
     },
     [columns],
+  );
+
+  // Right-click on a column header opens the exact same menu (filter,
+  // insert column left/right, rename, delete) as clicking the header's
+  // little menu icon — no need to hunt for the icon anymore.
+  const onHeaderContextMenu = useCallback(
+    (
+      colIndex: number,
+      event: { bounds: Rectangle; preventDefault: () => void },
+    ) => {
+      event.preventDefault();
+      onHeaderMenuClick(colIndex, event.bounds);
+    },
+    [onHeaderMenuClick],
   );
 
   // Close the header menu on outside click or Escape.
@@ -827,6 +1017,104 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     };
   }, [headerMenu]);
 
+  // --- Column filter (Excel-style checkbox list, lives in the same menu) ---
+  // Every distinct value ever seen in this column, so the checkbox list
+  // still shows an option even if the current filter has hidden all its
+  // rows. Deliberately ignores other columns' active filters, so opening
+  // one column's filter never shows a narrower list because of another —
+  // simpler and more predictable than Excel's contextual narrowing.
+  const filterColumnValues = useMemo(() => {
+    if (!headerMenu) return [];
+    const colId = headerMenu.colId;
+    const seen = new Set<string>();
+    data.forEach((row) => {
+      const v = row?.[colId] ?? "";
+      if (v) seen.add(v);
+    });
+    return Array.from(seen).sort((a, b) => a.localeCompare(b));
+  }, [headerMenu, data]);
+
+  const [filterSearch, setFilterSearch] = useState("");
+  // The checkboxes being edited right now, before "Apply" commits them to
+  // columnFilters. Re-seeded from the column's current filter (or "every
+  // value checked" if it has none) whenever a different column's menu opens.
+  const [pendingFilterValues, setPendingFilterValues] =
+    useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (!headerMenu) {
+      setPendingFilterValues(null);
+      setFilterSearch("");
+      return;
+    }
+    const existing = columnFilters[headerMenu.colId];
+    const seen = new Set<string>();
+    data.forEach((row) => seen.add(row?.[headerMenu.colId] ?? ""));
+    setPendingFilterValues(existing ? new Set(existing) : seen);
+    setFilterSearch("");
+    // Only re-seed when a *different column's* menu opens, not on every
+    // keystroke elsewhere — deliberately excludes columnFilters/data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headerMenu?.colId]);
+
+  const visibleFilterValues = useMemo(() => {
+    const q = filterSearch.trim().toLowerCase();
+    if (!q) return filterColumnValues;
+    return filterColumnValues.filter((v) => v.toLowerCase().includes(q));
+  }, [filterColumnValues, filterSearch]);
+
+  const toggleFilterValue = useCallback((value: string) => {
+    setPendingFilterValues((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }, []);
+
+  const allFilterValuesChecked =
+    !!pendingFilterValues &&
+    filterColumnValues.every((v) => pendingFilterValues.has(v));
+
+  const toggleSelectAllFilterValues = useCallback(() => {
+    setPendingFilterValues((prev) => {
+      const allChecked = !!prev && filterColumnValues.every((v) => prev.has(v));
+      return allChecked ? new Set() : new Set(filterColumnValues);
+    });
+  }, [filterColumnValues]);
+
+  const applyColumnFilter = useCallback(() => {
+    if (!headerMenu || !pendingFilterValues) return;
+    const colId = headerMenu.colId;
+    setColumnFilters((prev) => {
+      const next = { ...prev };
+      // Every known value checked is the same as "no filter" — and keeping
+      // it that way means a value typed into a *new* row later shows up
+      // automatically instead of being silently excluded.
+      if (pendingFilterValues.size >= filterColumnValues.length) {
+        delete next[colId];
+      } else {
+        next[colId] = new Set(pendingFilterValues);
+      }
+      return next;
+    });
+    setHeaderMenu(null);
+  }, [headerMenu, pendingFilterValues, filterColumnValues]);
+
+  const clearColumnFilter = useCallback(() => {
+    if (!headerMenu) return;
+    const colId = headerMenu.colId;
+    setColumnFilters((prev) => {
+      if (!(colId in prev)) return prev;
+      const next = { ...prev };
+      delete next[colId];
+      return next;
+    });
+    setHeaderMenu(null);
+  }, [headerMenu]);
+
+  const clearAllFilters = useCallback(() => setColumnFilters({}), []);
+
   const insertColumnLeft = useCallback(() => {
     if (!headerMenu) return;
     insertColumnAt(headerMenu.colIndex);
@@ -842,28 +1130,210 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   const renameHeaderMenuColumn = useCallback(() => {
     if (!headerMenu) return;
     const colId = headerMenu.colId;
-    setColumns((prev) =>
-      prev.map((c) =>
-        c.id === colId ? { ...c, title: renameValue.trim() || c.title } : c,
-      ),
+    const nextColumns = columns.map((c) =>
+      c.id === colId ? { ...c, title: renameValue.trim() || c.title } : c,
     );
+    setColumns(nextColumns);
+    // Renaming only changes `title`, which the debounced autosave's
+    // columnsSignature (id:width) doesn't track — so it would never
+    // trigger a save on its own. Persist explicitly, right away.
+    persistNow(data, nextColumns);
     setHeaderMenu(null);
-  }, [headerMenu, renameValue]);
+  }, [headerMenu, renameValue, columns, data, persistNow]);
 
   const deleteHeaderMenuColumn = useCallback(() => {
     if (!headerMenu) return;
     const colId = headerMenu.colId;
-    setColumns((prev) => prev.filter((c) => c.id !== colId));
-    setData((prev) =>
-      prev.map((row) => {
-        if (!(colId in row)) return row;
-        const next = { ...row };
-        delete next[colId];
-        return next;
-      }),
-    );
+    const nextColumns = columns.filter((c) => c.id !== colId);
+    const nextData = data.map((row) => {
+      if (!(colId in row)) return row;
+      const next = { ...row };
+      delete next[colId];
+      return next;
+    });
+    setColumns(nextColumns);
+    setData(nextData);
+    persistNow(nextData, nextColumns);
     setHeaderMenu(null);
-  }, [headerMenu]);
+  }, [headerMenu, columns, data, persistNow]);
+
+  // --- Row context menu: right-click a row to insert above/below or delete ---
+  const [rowMenu, setRowMenu] = useState<RowMenuState | null>(null);
+  const rowMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const onCellContextMenu = useCallback(
+    (cell: Item, event: { preventDefault: () => void; bounds: Rectangle }) => {
+      const [, visRow] = cell;
+      if (visRow < 0) return;
+      const row = visibleRowIndices[visRow];
+      if (row === undefined) return;
+      event.preventDefault();
+      // Give the user visual feedback that this is now the row they're
+      // acting on, same as if they'd clicked the row marker. Keep an
+      // existing multi-row selection intact if the right-clicked row is
+      // already part of it (so "Hide rows" can act on all of them).
+      setSelection((prev) =>
+        prev.rows.hasIndex(visRow)
+          ? prev
+          : {
+              columns: CompactSelection.empty(),
+              rows: CompactSelection.fromSingleSelection(visRow),
+              current: undefined,
+            },
+      );
+      setRowMenu({ rowIndex: row, visRow, bounds: event.bounds });
+    },
+    [visibleRowIndices],
+  );
+
+  // Close the row menu on outside click or Escape.
+  useEffect(() => {
+    if (!rowMenu) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (
+        rowMenuRef.current &&
+        !rowMenuRef.current.contains(e.target as Node)
+      ) {
+        setRowMenu(null);
+      }
+    };
+    const onDocKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRowMenu(null);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onDocKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onDocKeyDown);
+    };
+  }, [rowMenu]);
+
+  const insertRowAbove = useCallback(() => {
+    if (!rowMenu) return;
+    insertRowAt(rowMenu.rowIndex);
+    setRowMenu(null);
+  }, [rowMenu, insertRowAt]);
+
+  const insertRowBelow = useCallback(() => {
+    if (!rowMenu) return;
+    insertRowAt(rowMenu.rowIndex + 1);
+    setRowMenu(null);
+  }, [rowMenu, insertRowAt]);
+
+  const deleteRowMenuRow = useCallback(() => {
+    if (!rowMenu) return;
+    const idx = rowMenu.rowIndex;
+    const next = data.filter((_, i) => i !== idx);
+    setData(next);
+    setHiddenRows((prev) => {
+      if (prev.size === 0) return prev;
+      const shifted = new Set<number>();
+      prev.forEach((i) => {
+        if (i === idx) return;
+        shifted.add(i > idx ? i - 1 : i);
+      });
+      return shifted;
+    });
+    persistNow(next);
+    setRowMenu(null);
+    setSelection(emptySelection);
+  }, [rowMenu, data, persistNow]);
+
+  // Hides the whole current selection if it includes the right-clicked
+  // row (multi-row hide), otherwise just the single clicked row.
+  const hideRowMenuRow = useCallback(() => {
+    if (!rowMenu) return;
+    const selectedVisRows = Array.from(selection.rows);
+    const actualRowsToHide =
+      selectedVisRows.length > 1 && selection.rows.hasIndex(rowMenu.visRow)
+        ? selectedVisRows
+            .map((vr) => visibleRowIndices[vr])
+            .filter((i): i is number => i !== undefined)
+        : [rowMenu.rowIndex];
+
+    setHiddenRows((prev) => {
+      const next = new Set(prev);
+      actualRowsToHide.forEach((i) => next.add(i));
+      return next;
+    });
+    setRowMenu(null);
+    setSelection(emptySelection);
+  }, [rowMenu, selection, visibleRowIndices]);
+
+  const unhideAllRows = useCallback(() => {
+    setHiddenRows(new Set());
+    setRowMenu(null);
+  }, []);
+
+  // Unhides whatever hidden rows sit directly above the clicked (visible)
+  // row — i.e. between the previous visible row and this one.
+  const unhideAboveRowMenu = useCallback(() => {
+    if (!rowMenu) return;
+    const prevVisibleActual =
+      rowMenu.visRow > 0 ? visibleRowIndices[rowMenu.visRow - 1] : -1;
+    setHiddenRows((prev) => {
+      const next = new Set(prev);
+      for (let i = prevVisibleActual + 1; i < rowMenu.rowIndex; i++) {
+        next.delete(i);
+      }
+      return next;
+    });
+    setRowMenu(null);
+  }, [rowMenu, visibleRowIndices]);
+
+  // Unhides whatever hidden rows sit directly below the clicked (visible)
+  // row — i.e. between this one and the next visible row.
+  const unhideBelowRowMenu = useCallback(() => {
+    if (!rowMenu) return;
+    const nextVisibleActual =
+      rowMenu.visRow < visibleRowIndices.length - 1
+        ? visibleRowIndices[rowMenu.visRow + 1]
+        : data.length;
+    setHiddenRows((prev) => {
+      const next = new Set(prev);
+      for (let i = rowMenu.rowIndex + 1; i < nextVisibleActual; i++) {
+        next.delete(i);
+      }
+      return next;
+    });
+    setRowMenu(null);
+  }, [rowMenu, visibleRowIndices, data.length]);
+
+  // Whether there are manually-hidden rows immediately above/below the
+  // clicked row, used to decide which "Unhide" menu items to show. A gap
+  // in visibleRowIndices can now also come from a column filter, so this
+  // checks hiddenRows membership directly rather than just index math —
+  // otherwise "Unhide rows above" could appear (and do nothing) when a
+  // filter, not a manual hide, is what's actually closing the gap.
+  const hasHiddenAbove =
+    !!rowMenu &&
+    (() => {
+      const start =
+        rowMenu.visRow > 0 ? visibleRowIndices[rowMenu.visRow - 1] + 1 : 0;
+      for (let i = start; i < rowMenu.rowIndex; i++) {
+        if (hiddenRows.has(i)) return true;
+      }
+      return false;
+    })();
+  const hasHiddenBelow =
+    !!rowMenu &&
+    (() => {
+      const end =
+        rowMenu.visRow < visibleRowIndices.length - 1
+          ? visibleRowIndices[rowMenu.visRow + 1]
+          : data.length;
+      for (let i = rowMenu.rowIndex + 1; i < end; i++) {
+        if (hiddenRows.has(i)) return true;
+      }
+      return false;
+    })();
+
+  const rowMenuSelectionCount =
+    rowMenu &&
+    selection.rows.length > 1 &&
+    selection.rows.hasIndex(rowMenu.visRow)
+      ? selection.rows.length
+      : 1;
 
   // Only rows that actually have content matter for sizing (and saving) —
   // the infinite blank buffer below them shouldn't be measured on every
@@ -886,16 +1356,18 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     [columns],
   );
 
-  // Widths change on manual resize/auto-grow without changing columnIds,
-  // so we need a separate signature to trigger autosave on width changes.
+  // Width and title changes don't change columnIds, so we need a separate
+  // signature to trigger autosave on those (title is also saved eagerly by
+  // persistNow in renameHeaderMenuColumn, but this covers it defensively too).
   const columnsSignature = useMemo(
-    () => columns.map((c) => `${c.id}:${c.width ?? ""}`).join("|"),
+    () =>
+      columns.map((c) => `${c.id}:${c.width ?? ""}:${c.title ?? ""}`).join("|"),
     [columns],
   );
 
   // --- Autosave: debounced write to Postgres whenever content settles ---
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // (Structural edits like row/column insert or delete skip this debounce
+  // entirely via persistNow — this effect only handles typing.)
   useEffect(() => {
     if (!isLoaded) return; // don't save while the initial buffer is still in place
 
@@ -913,7 +1385,7 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
               title: String(c.title ?? ""),
               width: c.width,
             })),
-          filledRows,
+          data,
         );
         setSaveStatus("saved");
       } catch (err) {
@@ -926,7 +1398,7 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filledRows, columnsSignature, columnIds, isLoaded, sheetId]);
+  }, [data, columnsSignature, columnIds, isLoaded, sheetId]);
 
   // --- Auto-grow every column so its content (and header) is never clipped ---
   useEffect(() => {
@@ -1009,53 +1481,52 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   }, [filledRowEntries, columns, getMeasureCtx]);
 
   const getRowHeight = useCallback(
-    (row: number) => rowHeightMap.get(row) ?? MIN_ROW_HEIGHT,
-    [rowHeightMap],
+    (visRow: number) => {
+      const row = visibleRowIndices[visRow] ?? visRow;
+      return rowHeightMap.get(row) ?? MIN_ROW_HEIGHT;
+    },
+    [rowHeightMap, visibleRowIndices],
   );
 
   // --- Delete whatever rows/columns are currently selected ---
+  // Only rows are deletable via the keyboard shortcut now — columns can
+  // only be removed via the header menu's "Delete column" button, so a
+  // stray Backspace/Delete while a column is selected can't wipe it out.
   const deleteSelected = useCallback(() => {
-    const selectedRows = selection.rows;
-    const selectedCols = selection.columns;
+    const selectedVisRows = selection.rows;
+    if (selectedVisRows.length === 0) return;
 
-    const hasRows = selectedRows.length > 0;
-    const hasCols = selectedCols.length > 0;
-    if (!hasRows && !hasCols) return;
+    const actualRowsToDelete = new Set(
+      Array.from(selectedVisRows)
+        .map((vr) => visibleRowIndices[vr])
+        .filter((i): i is number => i !== undefined),
+    );
+    const nextData = data.filter((_, idx) => !actualRowsToDelete.has(idx));
 
-    if (hasRows) {
-      setData((prev) => prev.filter((_, idx) => !selectedRows.hasIndex(idx)));
-    }
-
-    if (hasCols) {
-      const colIdsToRemove = new Set(
-        Array.from(selectedCols)
-          .map((idx) => columns[idx]?.id)
-          .filter(Boolean),
+    setData(nextData);
+    setHiddenRows((prev) => {
+      if (prev.size === 0) return prev;
+      const deletedSorted = Array.from(actualRowsToDelete).sort(
+        (a, b) => a - b,
       );
-      setColumns((prev) =>
-        prev.filter((c) => !c.id || !colIdsToRemove.has(c.id)),
-      );
-      setData((prev) =>
-        prev.map((row) => {
-          const next = { ...row };
-          colIdsToRemove.forEach((id) => {
-            if (id) delete next[id];
-          });
-          return next;
-        }),
-      );
-    }
-
+      const shifted = new Set<number>();
+      prev.forEach((i) => {
+        if (actualRowsToDelete.has(i)) return;
+        const shift = deletedSorted.filter((d) => d < i).length;
+        shifted.add(i - shift);
+      });
+      return shifted;
+    });
+    // Structural edit — save right away, don't wait for the typing debounce.
+    persistNow(nextData);
     setSelection(emptySelection);
-  }, [selection, columns]);
+  }, [selection, data, visibleRowIndices, persistNow]);
 
-  // --- Keyboard shortcut: Delete/Backspace removes selected rows/cols ---
+  // --- Keyboard shortcut: Delete/Backspace removes selected rows only ---
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (event.key === "Delete" || event.key === "Backspace") {
-        const hasFullRowOrColSelection =
-          selection.rows.length > 0 || selection.columns.length > 0;
-        if (hasFullRowOrColSelection) {
+        if (selection.rows.length > 0) {
           event.preventDefault();
           deleteSelected();
         }
@@ -1068,8 +1539,40 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   // dropdown-menu affordance in its header, which opens the insert/rename/
   // delete popover below.
   const columnsWithMenu = useMemo(
-    () => columns.map((c) => ({ ...c, hasMenu: true })),
-    [columns],
+    () => [
+      {
+        title: "#",
+        id: ROW_NUMBER_COL_ID,
+        width: ROW_NUMBER_COL_WIDTH,
+        hasMenu: false,
+      } as GridColumn,
+      ...columns.map((c) => ({
+        ...c,
+        hasMenu: true,
+        // Funnel icon instead of the default triangle, so it's obvious the
+        // dropdown offers filtering — filled/colored once a filter is set.
+        menuIcon: (c.id && columnFilters[c.id] ? "filterActive" : "filter") as
+          | string
+          | undefined,
+      })),
+    ],
+    [columns, columnFilters],
+  );
+
+  // SVG sprites for the header menu icon — plain funnel normally, filled
+  // and accent-colored once that column has an active filter.
+  const headerIcons = useMemo(
+    () =>
+      ({
+        filter: () =>
+          `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5z" stroke="#9ca3af" stroke-width="1.6" stroke-linejoin="round" fill="none"/></svg>`,
+        filterActive: () =>
+          `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5z" fill="#4f46e5" stroke="#4f46e5" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
+      }) as Record<
+        string,
+        (props: { fgColor: string; bgColor: string }) => string
+      >,
+    [],
   );
 
   // Slim "+" button pinned to the right edge of the grid, for appending a
@@ -1109,39 +1612,142 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
 
   return (
     <div className="flex flex-col h-full" onKeyDown={onKeyDown}>
-      <div className="h-full rounded-xl overflow-hidden border border-gray-200">
-        <DataEditor
-          ref={gridRef}
-          getCellContent={getCellContent}
-          columns={columnsWithMenu}
-          rows={data.length}
-          rowHeight={getRowHeight}
-          onCellEdited={onCellEdited}
-          onColumnResize={onColumnResize}
-          onHeaderMenuClick={onHeaderMenuClick}
-          onVisibleRegionChanged={onVisibleRegionChanged}
-          rowMarkers="both"
-          gridSelection={selection}
-          onGridSelectionChange={setSelection}
-          rangeSelect="multi-rect"
-          columnSelect="multi"
-          rowSelect="multi"
-          getCellsForSelection={true}
-          width="100%"
-          rightElement={addColumnButton}
-          rightElementProps={{ sticky: true }}
-          customRenderers={[
-            testStatusCellRenderer,
-            authorSuggestCellRenderer,
-            statusLLTCellRenderer,
-            formatCheckedCellRenderer,
-          ]}
-          theme={{
-            bgHeader: "#f9fafb",
-            borderColor: "#e5e7eb",
-            horizontalBorderColor: "#e5e7eb",
+      {hiddenRows.size > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 12px",
+            marginBottom: 6,
+            borderRadius: 6,
+            background: "#fef9c3",
+            color: "#a16207",
+            fontSize: 12,
           }}
-        />
+        >
+          <span>
+            {hiddenRows.size} row{hiddenRows.size > 1 ? "s" : ""} hidden
+          </span>
+          <button
+            type="button"
+            onClick={unhideAllRows}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#a16207",
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Unhide all
+          </button>
+        </div>
+      )}
+      {activeFilterCount > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 12px",
+            marginBottom: 6,
+            borderRadius: 6,
+            background: "#eef2ff",
+            color: "#4338ca",
+            fontSize: 12,
+          }}
+        >
+          <span>
+            {activeFilterCount} column{activeFilterCount > 1 ? "s" : ""}{" "}
+            filtered — showing {visibleRowIndices.length} of {data.length} rows
+          </span>
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#4338ca",
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+      <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 flex flex-col">
+        <div className="flex-1 min-h-0">
+          <DataEditor
+            ref={gridRef}
+            getCellContent={getCellContent}
+            columns={columnsWithMenu}
+            rows={visibleRowIndices.length}
+            rowHeight={getRowHeight}
+            onCellEdited={onCellEdited}
+            onColumnResize={onColumnResize}
+            onHeaderMenuClick={onHeaderMenuClick}
+            onHeaderContextMenu={onHeaderContextMenu}
+            onCellContextMenu={onCellContextMenu}
+            rowMarkers="checkbox"
+            freezeColumns={1}
+            headerIcons={headerIcons}
+            gridSelection={selection}
+            onGridSelectionChange={setSelection}
+            rangeSelect="multi-rect"
+            columnSelect="multi"
+            rowSelect="multi"
+            getCellsForSelection={true}
+            width="100%"
+            rightElement={addColumnButton}
+            rightElementProps={{ sticky: true }}
+            customRenderers={[
+              rowNumberCellRenderer,
+              testStatusCellRenderer,
+              authorSuggestCellRenderer,
+              statusLLTCellRenderer,
+              formatCheckedCellRenderer,
+            ]}
+            theme={{
+              bgHeader: "#f9fafb",
+              borderColor: "#e5e7eb",
+              horizontalBorderColor: "#e5e7eb",
+            }}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={appendRow}
+          title="Add row"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+            padding: "8px 12px",
+            border: "none",
+            borderTop: "1px solid #e5e7eb",
+            background: "#f9fafb",
+            color: "#6b7280",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f3f4f6";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#f9fafb";
+          }}
+        >
+          <span style={{ fontSize: 16, fontWeight: 600 }}>+</span> Add row
+        </button>
       </div>
 
       {headerMenu && (
@@ -1151,7 +1757,7 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
             position: "fixed",
             left: Math.min(
               headerMenu.bounds.x,
-              (typeof window !== "undefined" ? window.innerWidth : 1200) - 200,
+              (typeof window !== "undefined" ? window.innerWidth : 1200) - 240,
             ),
             top: headerMenu.bounds.y + headerMenu.bounds.height + 2,
             zIndex: 50,
@@ -1159,7 +1765,7 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
             border: "1px solid #e5e7eb",
             borderRadius: 8,
             boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-            minWidth: 200,
+            minWidth: 240,
             overflow: "hidden",
           }}
         >
@@ -1188,6 +1794,131 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
               }}
             />
           </div>
+
+          <div style={{ borderBottom: "1px solid #f3f4f6" }}>
+            <div style={{ padding: "8px 10px 4px" }}>
+              <input
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Search values…"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "6px 8px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  outline: "none",
+                }}
+              />
+            </div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 10px",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#374151",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allFilterValuesChecked}
+                onChange={toggleSelectAllFilterValues}
+              />
+              Select all
+            </label>
+            <div style={{ maxHeight: 160, overflowY: "auto" }}>
+              {visibleFilterValues.length === 0 && (
+                <div
+                  style={{
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    color: "#9ca3af",
+                  }}
+                >
+                  No matching values
+                </div>
+              )}
+              {visibleFilterValues.map((value) => (
+                <label
+                  key={value || "\u0000blank"}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    color: "#111827",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!pendingFilterValues?.has(value)}
+                    onChange={() => toggleFilterValue(value)}
+                  />
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: value ? "#111827" : "#9ca3af",
+                      fontStyle: value ? "normal" : "italic",
+                    }}
+                  >
+                    {value}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, padding: 8 }}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearColumnFilter();
+                }}
+                disabled={!headerMenu || !(headerMenu.colId in columnFilters)}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 6,
+                  background: "white",
+                  color: "#6b7280",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applyColumnFilter();
+                }}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  border: "none",
+                  borderRadius: 6,
+                  background: "#4f46e5",
+                  color: "white",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Apply filter
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
             onMouseDown={(e) => {
@@ -1232,6 +1963,110 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
           >
             Delete column
           </button>
+        </div>
+      )}
+
+      {rowMenu && (
+        <div
+          ref={rowMenuRef}
+          style={{
+            position: "fixed",
+            left: Math.min(
+              rowMenu.bounds.x,
+              (typeof window !== "undefined" ? window.innerWidth : 1200) - 200,
+            ),
+            top: rowMenu.bounds.y + rowMenu.bounds.height + 2,
+            zIndex: 50,
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+            minWidth: 200,
+            overflow: "hidden",
+          }}
+        >
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertRowAbove();
+            }}
+            style={headerMenuItemStyle}
+          >
+            <span style={{ marginRight: 8 }}>↑</span> Insert row above
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertRowBelow();
+            }}
+            style={{ ...headerMenuItemStyle, borderTop: "1px solid #f3f4f6" }}
+          >
+            <span style={{ marginRight: 8 }}>↓</span> Insert row below
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              deleteRowMenuRow();
+            }}
+            style={{
+              ...headerMenuItemStyle,
+              borderTop: "1px solid #f3f4f6",
+              color: "#b91c1c",
+            }}
+          >
+            Delete row
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              hideRowMenuRow();
+            }}
+            style={{ ...headerMenuItemStyle, borderTop: "1px solid #f3f4f6" }}
+          >
+            {rowMenuSelectionCount > 1
+              ? `Hide ${rowMenuSelectionCount} rows`
+              : "Hide row"}
+          </button>
+          {hasHiddenAbove && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                unhideAboveRowMenu();
+              }}
+              style={headerMenuItemStyle}
+            >
+              Unhide rows above
+            </button>
+          )}
+          {hasHiddenBelow && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                unhideBelowRowMenu();
+              }}
+              style={headerMenuItemStyle}
+            >
+              Unhide rows below
+            </button>
+          )}
+          {hiddenRows.size > 0 && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                unhideAllRows();
+              }}
+              style={{ ...headerMenuItemStyle, borderTop: "1px solid #f3f4f6" }}
+            >
+              Unhide all rows ({hiddenRows.size})
+            </button>
+          )}
         </div>
       )}
     </div>

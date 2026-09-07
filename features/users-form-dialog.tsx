@@ -51,6 +51,10 @@ interface UserFormDialogProps {
     role?: Role;
     artifactType?: string;
   };
+  // When set, the Role field is hidden and every user created/edited here
+  // gets this role - used by pages scoped to one role (Consultants,
+  // Engagement Managers) where there's nothing to pick.
+  fixedRole?: Role;
   onSaved?: () => void;
 }
 
@@ -77,6 +81,7 @@ export function UserFormDialog({
   onOpenChange,
   user,
   defaultValues,
+  fixedRole,
   onSaved,
 }: UserFormDialogProps) {
   const isEditing = !!user;
@@ -101,12 +106,12 @@ export function UserFormDialog({
     } else {
       setForm({
         ...emptyState(),
-        role: defaultValues?.role ?? "",
+        role: fixedRole ?? defaultValues?.role ?? "",
         artifact_type: defaultValues?.artifactType ?? NONE,
       });
     }
     setError(null);
-  }, [open, user, defaultValues]);
+  }, [open, user, defaultValues, fixedRole]);
 
   const isConsultant = form.role === "CONSULTANT";
 
@@ -169,11 +174,19 @@ export function UserFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Edit user" : "New user"}</DialogTitle>
+          <DialogTitle>
+            {isEditing
+              ? "Edit user"
+              : fixedRole
+                ? `New ${ROLE_CONFIG[fixedRole]?.label ?? "user"}`
+                : "New user"}
+          </DialogTitle>
           <DialogDescription>
             {isEditing
               ? "Update this user's info and role."
-              : "Add a new user."}
+              : fixedRole
+                ? `Add a new ${ROLE_CONFIG[fixedRole]?.label ?? "user"}.`
+                : "Add a new user."}
           </DialogDescription>
         </DialogHeader>
 
@@ -214,24 +227,28 @@ export function UserFormDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Role</Label>
-            <Select
-              value={form.role}
-              onValueChange={(v) => handleRoleChange(v as Role)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a role" />
-              </SelectTrigger>
-              <SelectContent>
-                {roleEntries.map(([role, config]) => (
-                  <SelectItem key={role} value={role}>
-                    {config.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Hidden entirely when the page has already fixed the role - e.g.
+              the Consultants page always creates CONSULTANT users. */}
+          {!fixedRole && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Role</Label>
+              <Select
+                value={form.role}
+                onValueChange={(v) => handleRoleChange(v as Role)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roleEntries.map(([role, config]) => (
+                    <SelectItem key={role} value={role}>
+                      {config.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Only consultants have a seniority level. */}
           {isConsultant && (

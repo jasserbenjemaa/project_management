@@ -53,7 +53,7 @@ const Home = () => {
       linkTo: "/engagement-manager",
       imageUrl: "/campgemini_values/boldness.svg",
       icon: User,
-      name: "Engagement Manager",
+      name: "Engagement Managers",
       color: "orange",
       description: "Browse and manage engagement managers",
       allowedRoles: ["UNIT_MANAGER"],

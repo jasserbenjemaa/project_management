@@ -23,7 +23,7 @@ export default async function EngagementManagersPage() {
           projects={projects}
           userOptions={userOptions}
           fixedRole="ENGAGEMENT_MANAGER"
-          allowCreate={false}
+          allowCreate={true}
         />
       </div>
     </main>
