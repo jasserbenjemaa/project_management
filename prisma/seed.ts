@@ -152,6 +152,11 @@ async function main() {
             ? "Engagement manager"
             : "Consultant",
         startDate: faker.date.recent({ days: 90 }),
+        // Snapshot fields required by the schema — populated at creation
+        // time so the assignment survives if the user/project is deleted.
+        userName: user.name,
+        userEmail: user.email,
+        projectName: project.name,
       },
     });
 

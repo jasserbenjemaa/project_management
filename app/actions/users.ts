@@ -36,11 +36,25 @@ async function requireCurrentUserId(): Promise<string> {
   }
   return session.userId as string;
 }
-
 function formatError(error: unknown, fallback: string): ActionResult {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     if (error.code === "P2002") {
-      return { success: false, error: "That email is already in use." };
+      // `target` tells us which unique constraint actually collided —
+      // needed now that both `name` and `email` are unique on User.
+      const target = error.meta?.target;
+      const fields = Array.isArray(target)
+        ? target
+        : typeof target === "string"
+          ? [target]
+          : [];
+
+      if (fields.includes("name")) {
+        return { success: false, error: "That name is already in use." };
+      }
+      if (fields.includes("email")) {
+        return { success: false, error: "That email is already in use." };
+      }
+      return { success: false, error: "That value is already in use." };
     }
     if (error.code === "P2003" || error.code === "P2014") {
       return {
