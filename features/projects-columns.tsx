@@ -4,27 +4,25 @@ import { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, PencilIcon, TrashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-// Import the actual generated type instead of hand-declaring a copy, so this
-// never drifts out of sync with schema.prisma / the Prisma client output.
-// This is the lightweight "enums" entrypoint, safe to use in client components.
+import { CircularProgress } from "@/components/circular-progress";
 import type { ProjectStatus } from "@/app/generated/prisma/enums";
 
 export type { ProjectStatus };
 
-// Mirrors the Project model in schema.prisma. Dates are passed down as
-// ISO strings from the server (Server Components / Server Actions).
 export type Project = {
   id: string;
   name: string;
   status: ProjectStatus;
+  progress: number; // 0-100
+  deadline: string | null; // ISO string, nullable if no deadline set
   createdAt: string;
   updatedAt: string;
 };
 
-export const STATUS_CONFIG: Record<
-  ProjectStatus,
-  { label: string; className: string }
-> = {
+type StatusConfigEntry = { label: string; className: string };
+type StatusConfigMap = Record<ProjectStatus, StatusConfigEntry>;
+
+export const STATUS_CONFIG: StatusConfigMap = {
   PLANNED: {
     label: "Planned",
     className: "bg-gray-100 text-gray-700 hover:bg-gray-100",
@@ -51,10 +49,12 @@ const formatDate = (dateStr: string) => {
   });
 };
 
+const isOverdue = (deadline: string | null, status: ProjectStatus) => {
+  if (!deadline || status === "COMPLETED") return false;
+  return new Date(deadline).getTime() < Date.now();
+};
+
 interface ColumnActions {
-  // Optional now: when omitted, the actions column (Edit/Delete) is left
-  // out entirely. Callers gate these behind role checks, e.g. only pass
-  // them for UNIT_MANAGER users.
   onEdit?: (project: Project) => void;
   onDelete?: (project: Project) => void;
 }
@@ -97,6 +97,67 @@ export const getColumns = ({
         );
       },
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
+    },
+    {
+      accessorKey: "progress",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Progress
+            <ArrowUpDown className="ml-2 size-3.5" />
+          </Button>
+        );
+      },
+      cell: ({ row }) => (
+        <CircularProgress value={row.getValue("progress") as number} />
+      ),
+      sortingFn: (a, b) => a.original.progress - b.original.progress,
+    },
+    {
+      accessorKey: "deadline",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Deadline
+            <ArrowUpDown className="ml-2 size-3.5" />
+          </Button>
+        );
+      },
+      cell: ({ row }) => {
+        const deadline = row.getValue("deadline") as string | null;
+        const overdue = isOverdue(deadline, row.original.status);
+        if (!deadline) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        return (
+          <span
+            className={
+              overdue ? "text-destructive font-medium" : "text-muted-foreground"
+            }
+          >
+            {formatDate(deadline)}
+          </span>
+        );
+      },
+      sortingFn: (a, b) => {
+        const aTime = a.original.deadline
+          ? new Date(a.original.deadline).getTime()
+          : Infinity;
+        const bTime = b.original.deadline
+          ? new Date(b.original.deadline).getTime()
+          : Infinity;
+        return aTime - bTime;
+      },
     },
     {
       accessorKey: "createdAt",

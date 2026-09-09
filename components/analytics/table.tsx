@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { DataTable } from "@/components/data-table";
 
 // ---------------------------------------------------------------------------
@@ -167,9 +168,9 @@ export const columns: ColumnDef<Consultant>[] = [
     cell: ({ row }) => {
       const value = row.getValue<number>("progression");
       return (
-        <div className="flex items-center gap-2 w-40">
+        <div className="flex w-40 items-center gap-2">
           <Progress value={value} className="h-2" locale="en-US" />
-          <span className="text-sm text-muted-foreground w-9 text-right">
+          <span className="w-9 text-right text-sm text-muted-foreground">
             {value}%
           </span>
         </div>
@@ -182,12 +183,12 @@ export const columns: ColumnDef<Consultant>[] = [
     cell: ({ row }) => {
       const projects = row.getValue<string[]>("projects");
       return (
-        <div className="flex flex-wrap gap-1.5 max-w-xs">
+        <div className="flex max-w-xs flex-wrap gap-1.5">
           {projects.map((project) => (
             <Badge
               key={project}
               variant="outline"
-              className="font-normal text-xs"
+              className="text-xs font-normal"
             >
               {project}
             </Badge>
@@ -225,11 +226,21 @@ export const columns: ColumnDef<Consultant>[] = [
 
 export default function ConsultantsTable() {
   return (
-    <DataTable
-      columns={columns}
-      data={consultants}
-      pageSize={7}
-      initialSorting={[{ id: "kpi", desc: true }]}
-    />
+    <Card className="rounded-2xl border-border/60 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-semibold">Consultants</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Progress and KPI by consultant across active projects
+        </p>
+      </CardHeader>
+      <CardContent>
+        <DataTable
+          columns={columns}
+          data={consultants}
+          pageSize={7}
+          initialSorting={[{ id: "kpi", desc: true }]}
+        />
+      </CardContent>
+    </Card>
   );
 }
