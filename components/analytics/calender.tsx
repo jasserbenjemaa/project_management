@@ -10,23 +10,28 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { DayButton } from "react-day-picker";
+import { enUS } from "date-fns/locale";
+import { getProjectDeliveries } from "@/app/actions/projects";
+import type { ProjectStatus } from "@/app/generated/prisma/enums";
 
-// Example event data — replace with your real events (e.g. from an API)
+// One event per project delivery date, built from real data instead of
+// the old hardcoded array.
 type CalendarEvent = {
   date: Date;
   title: string;
   color: string; // tailwind color class, e.g. "bg-red-500"
 };
 
-const events: CalendarEvent[] = [
-  { date: new Date(2026, 8, 12), title: "Team standup", color: "bg-blue-500" },
-  { date: new Date(2026, 8, 12), title: "Design review", color: "bg-pink-500" },
-  {
-    date: new Date(2026, 8, 20),
-    title: "Product launch",
-    color: "bg-green-500",
-  },
-];
+// Same on-track / at-risk / delayed / completed semantics as
+// project-status.tsx, so a color means the same thing everywhere on the
+// dashboard. The schema has no separate "at risk"/"delayed" status field,
+// so "delayed" is derived: not completed and past its delivery date.
+function colorForProject(status: ProjectStatus, deliveryDate: Date): string {
+  if (status === "COMPLETED") return "bg-blue-500";
+  if (deliveryDate.getTime() < Date.now()) return "bg-red-500";
+  if (status === "ON_HOLD") return "bg-amber-500";
+  return "bg-green-500";
+}
 
 function isSameDay(a: Date, b: Date) {
   return (
@@ -36,13 +41,11 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
-function getEventsForDay(day: Date) {
-  return events.filter((e) => isSameDay(e.date, day));
-}
-
-function CalendarDayButton(props: React.ComponentProps<typeof DayButton>) {
-  const { day, modifiers, ...buttonProps } = props;
-  const dayEvents = getEventsForDay(day.date);
+function CalendarDayButton(
+  props: React.ComponentProps<typeof DayButton> & { events: CalendarEvent[] },
+) {
+  const { day, modifiers, events, ...buttonProps } = props;
+  const dayEvents = events.filter((e) => isSameDay(e.date, day.date));
 
   const content = (
     <button
@@ -90,28 +93,73 @@ function CalendarDayButton(props: React.ComponentProps<typeof DayButton>) {
 
 function CalendarDemo() {
   const [date, setDate] = React.useState<Date | undefined>(new Date());
+  const [events, setEvents] = React.useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    getProjectDeliveries()
+      .then((result) => {
+        if (cancelled) return;
+        if (result.success) {
+          setEvents(
+            result.projects.map((p) => {
+              const deliveryDate = new Date(p.deliveryDate);
+              return {
+                date: deliveryDate,
+                title: `${p.name} — delivery`,
+                color: colorForProject(p.status, deliveryDate),
+              };
+            }),
+          );
+        } else {
+          setError(result.error);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError("Failed to load project delivery dates.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <Card className="h-full rounded-2xl border-border/60 shadow-sm">
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-semibold">Calendar</CardTitle>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Upcoming events this month
+          Project delivery dates this month
         </p>
       </CardHeader>
-      <CardContent className="flex justify-center pb-6">
+      <CardContent className="flex flex-col items-center gap-2 pb-6">
         <TooltipProvider>
           <Calendar
             mode="single"
             selected={date}
             onSelect={setDate}
+            locale={enUS}
             className="w-full rounded-lg border p-4"
             captionLayout="dropdown"
             components={{
-              DayButton: CalendarDayButton,
+              DayButton: (props) => (
+                <CalendarDayButton {...props} events={events} />
+              ),
             }}
           />
         </TooltipProvider>
+        {loading && (
+          <p className="text-xs text-muted-foreground">Loading deliveries…</p>
+        )}
+        {!loading && error && (
+          <p className="text-xs text-destructive">{error}</p>
+        )}
       </CardContent>
     </Card>
   );

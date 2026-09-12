@@ -1,53 +1,43 @@
 "use client";
 
+import * as React from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  ArrowUp,
-  ArrowDown,
   CalendarClock,
   Loader2,
   PauseCircle,
   CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
+import { getProjectStatusOverview } from "@/app/actions/projects";
+import type { ProjectStatus } from "@/app/generated/prisma/enums";
 
 type Stage = {
   label: string;
   count: number;
-  trend: number;
   icon: LucideIcon;
   fg: string;
 };
 
-const stages: Stage[] = [
-  {
-    label: "Planned",
-    count: 18,
-    trend: 8.5,
-    icon: CalendarClock,
-    fg: "#378ADD",
-  },
-  {
-    label: "In progress",
-    count: 42,
-    trend: 15.2,
-    icon: Loader2,
-    fg: "#6D5DF2",
-  },
-  { label: "On hold", count: 7, trend: -4.1, icon: PauseCircle, fg: "#D85A30" },
-  {
-    label: "Completed",
-    count: 63,
-    trend: 22.5,
-    icon: CheckCircle2,
-    fg: "#0D9488",
-  },
+// Display metadata per status — order here controls display order.
+const STATUS_META: Record<
+  ProjectStatus,
+  { label: string; icon: LucideIcon; fg: string }
+> = {
+  PLANNED: { label: "Planned", icon: CalendarClock, fg: "#378ADD" },
+  ACTIVE: { label: "In progress", icon: Loader2, fg: "#6D5DF2" },
+  ON_HOLD: { label: "On hold", icon: PauseCircle, fg: "#D85A30" },
+  COMPLETED: { label: "Completed", icon: CheckCircle2, fg: "#0D9488" },
+};
+
+const STATUS_ORDER: ProjectStatus[] = [
+  "PLANNED",
+  "ACTIVE",
+  "ON_HOLD",
+  "COMPLETED",
 ];
 
-function StatusItem({ label, count, trend, icon: Icon, fg }: Stage) {
-  const isUp = trend >= 0;
-  const TrendIcon = isUp ? ArrowUp : ArrowDown;
-
+function StatusItem({ label, count, icon: Icon, fg }: Stage) {
   return (
     <div className="flex flex-1 items-center gap-4 px-6 py-5">
       <span
@@ -58,23 +48,62 @@ function StatusItem({ label, count, trend, icon: Icon, fg }: Stage) {
       </span>
       <div className="flex flex-col gap-0.5">
         <span className="text-sm text-muted-foreground">{label}</span>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tracking-tight">{count}</span>
-          <span
-            className={`flex items-center gap-0.5 text-xs font-medium ${
-              isUp ? "text-emerald-600" : "text-rose-600"
-            }`}
-          >
-            <TrendIcon className="h-3 w-3" />
-            {Math.abs(trend)}%
-          </span>
-        </div>
+        <span className="text-2xl font-semibold tracking-tight">{count}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusItemSkeleton() {
+  return (
+    <div className="flex flex-1 items-center gap-4 px-6 py-5">
+      <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-muted" />
+      <div className="flex flex-col gap-1.5">
+        <span className="h-3.5 w-16 animate-pulse rounded bg-muted" />
+        <span className="h-6 w-10 animate-pulse rounded bg-muted" />
       </div>
     </div>
   );
 }
 
 export default function StatusOverview() {
+  const [stages, setStages] = React.useState<Stage[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    getProjectStatusOverview()
+      .then((result) => {
+        if (cancelled) return;
+        if (result.success) {
+          const byStatus = new Map(result.stats.map((s) => [s.status, s]));
+          setStages(
+            STATUS_ORDER.map((status) => {
+              const meta = STATUS_META[status];
+              const stat = byStatus.get(status);
+              return {
+                label: meta.label,
+                icon: meta.icon,
+                fg: meta.fg,
+                count: stat?.count ?? 0,
+              };
+            }),
+          );
+        } else {
+          setError(result.error);
+        }
+      })
+      .catch(() => {
+        if (!cancelled)
+          setError("Failed to load project management analytics.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <Card className="rounded-2xl border-border/60 shadow-sm">
       <CardHeader className="border-b border-border/60">
@@ -82,11 +111,15 @@ export default function StatusOverview() {
           Project management analytics
         </CardTitle>
       </CardHeader>
-      <div className="flex flex-col divide-y divide-border/60 sm:flex-row sm:divide-x sm:divide-y-0">
-        {stages.map((s) => (
-          <StatusItem key={s.label} {...s} />
-        ))}
-      </div>
+      {error ? (
+        <p className="px-6 py-5 text-sm text-destructive">{error}</p>
+      ) : (
+        <div className="flex flex-col divide-y divide-border/60 sm:flex-row sm:divide-x sm:divide-y-0">
+          {stages
+            ? stages.map((s) => <StatusItem key={s.label} {...s} />)
+            : STATUS_ORDER.map((status) => <StatusItemSkeleton key={status} />)}
+        </div>
+      )}
     </Card>
   );
 }

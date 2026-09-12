@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createSheet, renameSheet, deleteSheet } from "@/app/actions/sheet";
 import type { RowData } from "@/components/sheet/sheet-table";
 
@@ -14,6 +14,8 @@ const SheetTable = dynamic(() => import("@/components/sheet/sheet-table"), {
 // Those sheets are auto-created ("FiAv-{project name}") and can't be
 // renamed or deleted from here while the project still exists.
 type SheetTab = { id: string; name: string; projectId: string | null };
+
+const VISIBLE_TAB_COUNT = 4;
 
 export default function SheetsClient({
   tabs,
@@ -30,12 +32,88 @@ export default function SheetsClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
 
+  // useState(tabs) only seeds the initial value — it does NOT resync when
+  // the `tabs` prop changes on a later render (e.g. after router.push to a
+  // new ?id=, or router.refresh()). Without this, newly added/deleted
+  // sheets only show up after a hard reload. Keep localTabs mirrored to
+  // whatever the server actually sent down.
   useEffect(() => {
     setLocalTabs(tabs);
   }, [tabs]);
 
   const activeProjectId =
     localTabs.find((t) => t.id === sheetId)?.projectId ?? null;
+
+  // Only show VISIBLE_TAB_COUNT tabs directly; the rest live behind the
+  // "More" search menu. If the active sheet isn't among the first N, swap
+  // it in for the last slot so the current tab is always visible/highlighted.
+  const { visibleTabs, overflowTabs } = useMemo(() => {
+    const first = localTabs.slice(0, VISIBLE_TAB_COUNT);
+    const rest = localTabs.slice(VISIBLE_TAB_COUNT);
+
+    const activeInFirst = first.some((t) => t.id === sheetId);
+    if (activeInFirst || first.length < VISIBLE_TAB_COUNT) {
+      return { visibleTabs: first, overflowTabs: rest };
+    }
+
+    const activeInRest = rest.find((t) => t.id === sheetId);
+    if (!activeInRest) {
+      return { visibleTabs: first, overflowTabs: rest };
+    }
+
+    // Swap the active tab into the last visible slot, push the bumped
+    // tab back into the overflow list (kept in original relative order).
+    const bumped = first[first.length - 1];
+    const swappedFirst = [...first.slice(0, -1), activeInRest];
+    const swappedRest = rest
+      .filter((t) => t.id !== activeInRest.id)
+      .flatMap((t) => (t.id === bumped.id ? [] : [t]));
+    // Re-insert bumped tab where activeInRest was, roughly — simplest is
+    // just prepending it so it's easy to find again in the menu.
+    return {
+      visibleTabs: swappedFirst,
+      overflowTabs: [bumped, ...swappedRest],
+    };
+  }, [localTabs, sheetId]);
+
+  // --- "More" menu: searchable dropdown for overflow tabs ---
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [moreSearch, setMoreSearch] = useState("");
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreSearchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const filteredOverflowTabs = useMemo(() => {
+    const q = moreSearch.trim().toLowerCase();
+    if (!q) return overflowTabs;
+    return overflowTabs.filter((t) => t.name.toLowerCase().includes(q));
+  }, [overflowTabs, moreSearch]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    moreSearchInputRef.current?.focus();
+
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (
+        moreMenuRef.current &&
+        !moreMenuRef.current.contains(e.target as Node)
+      ) {
+        setMoreMenuOpen(false);
+      }
+    };
+    const onDocKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onDocKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onDocKeyDown);
+    };
+  }, [moreMenuOpen]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) setMoreSearch("");
+  }, [moreMenuOpen]);
 
   const handleAddTab = async () => {
     const created = await createSheet(`Sheet ${localTabs.length + 1}`);
@@ -47,6 +125,11 @@ export default function SheetsClient({
 
   const handleSelectTab = (id: string) => {
     if (id !== sheetId) router.push(`/sheets?id=${id}`);
+  };
+
+  const selectFromMoreMenu = (id: string) => {
+    setMoreMenuOpen(false);
+    handleSelectTab(id);
   };
 
   const startRename = (tab: SheetTab) => {
@@ -103,13 +186,13 @@ export default function SheetsClient({
         <SheetTable
           key={sheetId}
           sheetId={sheetId}
-          initialRows={initialRows}
           projectId={activeProjectId}
+          initialRows={initialRows}
         />
       </div>
 
-      <div className="flex items-center gap-1 border-t border-gray-200 bg-gray-50 px-2 py-1 overflow-x-auto">
-        {localTabs.map((tab) => {
+      <div className="flex items-center gap-1 border-t border-gray-200 bg-gray-50 px-2 py-1">
+        {visibleTabs.map((tab) => {
           const isActive = tab.id === sheetId;
           const isEditing = editingId === tab.id;
           const isProjectSheet = tab.projectId !== null;
@@ -123,7 +206,7 @@ export default function SheetsClient({
                   ? "Linked to a project — renamed/deleted automatically"
                   : undefined
               }
-              className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-xs cursor-pointer select-none border ${
+              className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-xs cursor-pointer select-none border shrink-0 ${
                 isActive
                   ? "bg-white border-gray-300 border-b-white -mb-px font-medium text-gray-900"
                   : "bg-gray-100 border-transparent text-gray-500 hover:bg-gray-200"
@@ -171,10 +254,105 @@ export default function SheetsClient({
             </div>
           );
         })}
+
+        {overflowTabs.length > 0 && (
+          <div className="relative shrink-0" ref={moreMenuRef}>
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((prev) => !prev)}
+              className={`px-2 py-1.5 text-xs rounded-t-md border shrink-0 ${
+                moreMenuOpen
+                  ? "bg-white border-gray-300 border-b-white -mb-px text-gray-900"
+                  : "bg-gray-100 border-transparent text-gray-500 hover:bg-gray-200"
+              }`}
+              title="More sheets"
+            >
+              More ({overflowTabs.length}) ▾
+            </button>
+
+            {moreMenuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "100%",
+                  left: 0,
+                  marginBottom: 4,
+                  zIndex: 50,
+                  background: "white",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+                  width: 240,
+                  overflow: "hidden",
+                }}
+              >
+                <div style={{ padding: 8, borderBottom: "1px solid #f3f4f6" }}>
+                  <input
+                    ref={moreSearchInputRef}
+                    value={moreSearch}
+                    onChange={(e) => setMoreSearch(e.target.value)}
+                    placeholder="Search sheets…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "6px 8px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      outline: "none",
+                    }}
+                  />
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                  {filteredOverflowTabs.length === 0 && (
+                    <div
+                      style={{
+                        padding: "8px 10px",
+                        fontSize: 12,
+                        color: "#9ca3af",
+                      }}
+                    >
+                      No matching sheets
+                    </div>
+                  )}
+                  {filteredOverflowTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => selectFromMoreMenu(tab.id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 10px",
+                        border: "none",
+                        background:
+                          tab.id === sheetId ? "#eef2ff" : "transparent",
+                        color: "#111827",
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {tab.projectId !== null && (
+                        <span className="text-gray-400" aria-hidden>
+                          🔒
+                        </span>
+                      )}
+                      {tab.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handleAddTab}
-          className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded"
+          className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded shrink-0"
           title="Add sheet"
         >
           +

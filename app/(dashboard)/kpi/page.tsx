@@ -1,11 +1,9 @@
 "use client";
 
 import KpiHeader from "@/components/analytics/header";
-import StatusOverview from "@/components/analytics/cards";
 import PipelineDonut from "@/components/analytics/donut";
 import CalendarDemo from "@/components/analytics/calender";
 import ConsultantsTable from "@/components/analytics/table";
-import ProjectAnalyticsHeader from "@/components/analytics/project-analytics-header";
 import ProjectStatus from "@/components/analytics/project-status";
 import ProjectProgress from "@/components/analytics/project-progress";
 import TaskDeliveryTrend from "@/components/analytics/task-delivery-trend";

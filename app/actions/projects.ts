@@ -24,6 +24,259 @@ export async function getProjectOptions() {
   }
 }
 
+export type ProjectDelivery = {
+  id: string;
+  name: string;
+  deliveryDate: Date;
+  status: ProjectStatus;
+};
+
+// For the calendar KPI widget — only projects that actually have a
+// delivery date set are relevant here. Pulls status too so the calendar
+// can color-code the same way project-status.tsx does (on track / at
+// risk / delayed / completed).
+export async function getProjectDeliveries(): Promise<
+  | { success: true; projects: ProjectDelivery[] }
+  | { success: false; error: string }
+> {
+  try {
+    const projects = await db.project.findMany({
+      where: { deliveryDate: { not: null } },
+      select: { id: true, name: true, deliveryDate: true, status: true },
+      orderBy: { deliveryDate: "asc" },
+    });
+    return {
+      success: true,
+      // deliveryDate is guaranteed non-null by the where clause above
+      projects: projects as ProjectDelivery[],
+    };
+  } catch (error) {
+    console.error("Failed to fetch project delivery dates", error);
+    return {
+      success: false,
+      error: "Failed to fetch project delivery dates.",
+    };
+  }
+}
+
+export type ProjectStatusStat = {
+  status: ProjectStatus;
+  count: number;
+};
+
+// Header KPI widget ("Project management analytics"): count of projects
+// per status.
+export async function getProjectStatusOverview(): Promise<
+  | { success: true; stats: ProjectStatusStat[] }
+  | { success: false; error: string }
+> {
+  try {
+    const statuses: ProjectStatus[] = [
+      "PLANNED",
+      "ACTIVE",
+      "ON_HOLD",
+      "COMPLETED",
+    ];
+
+    const stats = await Promise.all(
+      statuses.map(async (status) => {
+        const count = await db.project.count({ where: { status } });
+        return { status, count };
+      }),
+    );
+
+    return { success: true, stats };
+  } catch (error) {
+    console.error("Failed to fetch project status overview", error);
+    return {
+      success: false,
+      error: "Failed to fetch project status overview.",
+    };
+  }
+}
+
+export type ProjectProgressItem = {
+  id: string;
+  name: string;
+  value: number; // 0-100, % of the project's sheet rows marked "Delivered"
+};
+
+// The sheet's status column is keyed "statusLLTDate" (see sheet.ts /
+// project-progress row shape) even though it holds a pipeline-stage
+// string, not a date — that's the column's actual id in Sheet.columns/rows.
+const DELIVERY_STATUS_COLUMN_ID = "statusLLTDate";
+const DELIVERED_VALUE = "Delivered";
+
+// "Project progress" widget: % of a project's sheet rows whose status
+// column is "Delivered", for each ACTIVE project. This reads the sheet
+// data itself (Sheet.rows, a JSON blob keyed by column id) rather than
+// the Task table, since the sheet — not Task — is where line items and
+// their delivery status actually live in this app. Projects with no
+// sheet, or a sheet with no rows, are omitted.
+export async function getActiveProjectProgress(): Promise<
+  | { success: true; projects: ProjectProgressItem[] }
+  | { success: false; error: string }
+> {
+  try {
+    const projects = await db.project.findMany({
+      where: { status: "ACTIVE" },
+      select: {
+        id: true,
+        name: true,
+        sheet: { select: { rows: true } },
+      },
+    });
+
+    const withProgress = projects
+      .filter(
+        (p) =>
+          p.sheet && Array.isArray(p.sheet.rows) && p.sheet.rows.length > 0,
+      )
+      .map((p) => {
+        const rows = p.sheet!.rows as Record<string, string>[];
+        const delivered = rows.filter(
+          (r) => r[DELIVERY_STATUS_COLUMN_ID] === DELIVERED_VALUE,
+        ).length;
+        return {
+          id: p.id,
+          name: p.name,
+          value: Math.round((delivered / rows.length) * 100),
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+
+    return { success: true, projects: withProgress };
+  } catch (error) {
+    console.error("Failed to fetch active project progress", error);
+    return {
+      success: false,
+      error: "Failed to fetch active project progress.",
+    };
+  }
+}
+
+export type ProjectHealth = "ON_TRACK" | "AT_RISK" | "DELAYED" | "COMPLETED";
+
+export type ProjectHealthCount = {
+  health: ProjectHealth;
+  count: number;
+};
+
+// How many days out from its delivery date a project counts as "at risk"
+// rather than comfortably "on track".
+const AT_RISK_WINDOW_DAYS = 14;
+
+// Derives a project's health from status + deliveryDate. The schema has
+// no explicit "at risk"/"delayed" field, so this is a rule, not stored
+// data:
+//   - COMPLETED status                              -> Completed
+//   - not completed, deliveryDate already passed     -> Delayed
+//   - not completed, ON_HOLD OR due within
+//     AT_RISK_WINDOW_DAYS                            -> At risk
+//   - everything else (incl. no deliveryDate set)    -> On track
+// Same logic the calendar widget uses for its dot colors, kept in sync
+// so the two widgets never disagree about a given project.
+function deriveProjectHealth(
+  status: ProjectStatus,
+  deliveryDate: Date | null,
+): ProjectHealth {
+  if (status === "COMPLETED") return "COMPLETED";
+
+  const now = Date.now();
+  if (deliveryDate && deliveryDate.getTime() < now) return "DELAYED";
+
+  if (status === "ON_HOLD") return "AT_RISK";
+  if (deliveryDate) {
+    const msUntilDue = deliveryDate.getTime() - now;
+    const daysUntilDue = msUntilDue / (1000 * 60 * 60 * 24);
+    if (daysUntilDue <= AT_RISK_WINDOW_DAYS) return "AT_RISK";
+  }
+
+  return "ON_TRACK";
+}
+
+// "Project status" donut: every project bucketed into On track / At risk
+// / Delayed / Completed (see deriveProjectHealth for the rule).
+export async function getProjectStatusHealth(): Promise<
+  | { success: true; total: number; counts: ProjectHealthCount[] }
+  | { success: false; error: string }
+> {
+  try {
+    const projects = await db.project.findMany({
+      select: { status: true, deliveryDate: true },
+    });
+
+    const tally: Record<ProjectHealth, number> = {
+      ON_TRACK: 0,
+      AT_RISK: 0,
+      DELAYED: 0,
+      COMPLETED: 0,
+    };
+
+    for (const p of projects) {
+      const health = deriveProjectHealth(p.status, p.deliveryDate);
+      tally[health] += 1;
+    }
+
+    const order: ProjectHealth[] = [
+      "ON_TRACK",
+      "AT_RISK",
+      "DELAYED",
+      "COMPLETED",
+    ];
+    const counts = order.map((health) => ({ health, count: tally[health] }));
+    const total = projects.length;
+
+    return { success: true, total, counts };
+  } catch (error) {
+    console.error("Failed to fetch project status health", error);
+    return {
+      success: false,
+      error: "Failed to fetch project status health.",
+    };
+  }
+}
+
+export type ProjectStatusCount = {
+  status: ProjectStatus;
+  count: number;
+};
+
+// "Project management analytics" header widget: count of projects per
+// literal enum status (PLANNED / ACTIVE / ON_HOLD / COMPLETED).
+export async function getProjectStatusCounts(): Promise<
+  | { success: true; total: number; counts: ProjectStatusCount[] }
+  | { success: false; error: string }
+> {
+  try {
+    const grouped = await db.project.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    });
+
+    const byStatus = new Map(grouped.map((g) => [g.status, g._count._all]));
+    const statuses: ProjectStatus[] = [
+      "PLANNED",
+      "ACTIVE",
+      "ON_HOLD",
+      "COMPLETED",
+    ];
+    const counts = statuses.map((status) => ({
+      status,
+      count: byStatus.get(status) ?? 0,
+    }));
+    const total = counts.reduce((sum, c) => sum + c.count, 0);
+
+    return { success: true, total, counts };
+  } catch (error) {
+    console.error("Failed to fetch project status counts", error);
+    return {
+      success: false,
+      error: "Failed to fetch project status counts.",
+    };
+  }
+}
+
 // CREATE
 export async function createProject(input: {
   name: string;

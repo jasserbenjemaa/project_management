@@ -2,41 +2,84 @@
 
 import * as React from "react";
 import { Label, Pie, PieChart, Cell } from "recharts";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { getProjectStatusHealth } from "@/app/actions/projects";
+import type { ProjectHealth } from "@/app/actions/projects";
 
-type Status = {
+type StatusSlice = {
   label: string;
   count: number;
   fg: string;
 };
 
-const statuses: Status[] = [
-  { label: "On track", count: 78, fg: "#16A34A" },
-  { label: "At risk", count: 12, fg: "#D97706" },
-  { label: "Delayed", count: 9, fg: "#DC2626" },
-  { label: "Completed", count: 29, fg: "#2563EB" },
+// Same health categories and colors the calendar widget uses for its
+// dot colors — kept in sync via deriveProjectHealth in projects.ts, so
+// "On track" always means the same thing across the dashboard.
+const HEALTH_META: Record<ProjectHealth, { label: string; fg: string }> = {
+  ON_TRACK: { label: "On track", fg: "#16A34A" },
+  AT_RISK: { label: "At risk", fg: "#D97706" },
+  DELAYED: { label: "Delayed", fg: "#DC2626" },
+  COMPLETED: { label: "Completed", fg: "#2563EB" },
+};
+
+const HEALTH_ORDER: ProjectHealth[] = [
+  "ON_TRACK",
+  "AT_RISK",
+  "DELAYED",
+  "COMPLETED",
 ];
 
-const chartConfig = statuses.reduce((acc, s) => {
-  acc[s.label] = { label: s.label, color: s.fg };
-  return acc;
-}, {} as ChartConfig);
-
 export default function ProjectStatus() {
-  const total = React.useMemo(
-    () => statuses.reduce((acc, curr) => acc + curr.count, 0),
-    [],
+  const [slices, setSlices] = React.useState<StatusSlice[] | null>(null);
+  const [total, setTotal] = React.useState(0);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    getProjectStatusHealth()
+      .then((result) => {
+        if (cancelled) return;
+        if (result.success) {
+          setTotal(result.total);
+          const byHealth = new Map(
+            result.counts.map((c) => [c.health, c.count]),
+          );
+          setSlices(
+            HEALTH_ORDER.filter(
+              (health) => (byHealth.get(health) ?? 0) > 0,
+            ).map((health) => ({
+              label: HEALTH_META[health].label,
+              fg: HEALTH_META[health].fg,
+              count: byHealth.get(health) ?? 0,
+            })),
+          );
+        } else {
+          setError(result.error);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError("Failed to load project status.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const chartConfig = React.useMemo(
+    () =>
+      (slices ?? []).reduce((acc, s) => {
+        acc[s.label] = { label: s.label, color: s.fg };
+        return acc;
+      }, {} as ChartConfig),
+    [slices],
   );
 
   return (
@@ -50,76 +93,92 @@ export default function ProjectStatus() {
         </p>
       </CardHeader>
       <CardContent>
-        <ChartContainer
-          config={chartConfig}
-          className="mx-auto aspect-square max-h-[220px]"
-        >
-          <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
-            <Pie
-              data={statuses}
-              dataKey="count"
-              nameKey="label"
-              innerRadius={70}
-              outerRadius={100}
-              strokeWidth={4}
-              paddingAngle={2}
-            >
-              {statuses.map((entry) => (
-                <Cell key={entry.label} fill={entry.fg} />
-              ))}
-              <Label
-                content={({ viewBox }) => {
-                  if (viewBox && "cx" in viewBox && "cy" in viewBox) {
-                    return (
-                      <text
-                        x={viewBox.cx}
-                        y={viewBox.cy}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                      >
-                        <tspan
-                          x={viewBox.cx}
-                          y={viewBox.cy}
-                          className="fill-foreground text-2xl font-semibold"
-                        >
-                          {total}
-                        </tspan>
-                        <tspan
-                          x={viewBox.cx}
-                          y={(viewBox.cy || 0) + 22}
-                          className="fill-muted-foreground text-sm"
-                        >
-                          Projects
-                        </tspan>
-                      </text>
-                    );
-                  }
-                }}
-              />
-            </Pie>
-          </PieChart>
-        </ChartContainer>
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-          {statuses.map((s) => (
-            <span key={s.label} className="flex items-center gap-1.5">
-              <span
-                className="h-2 w-2 shrink-0 rounded-sm"
-                style={{ backgroundColor: s.fg }}
-              />
-              <span className="truncate text-muted-foreground">
-                {s.label}
-                <span className="ml-1 text-foreground/70">
-                  {Math.round((s.count / total) * 100)}%
+        {!error && !slices && (
+          <div className="mx-auto flex aspect-square max-h-[220px] items-center justify-center">
+            <div className="h-40 w-40 animate-pulse rounded-full bg-muted" />
+          </div>
+        )}
+
+        {!error && slices && slices.length === 0 && (
+          <p className="text-sm text-muted-foreground">No projects yet.</p>
+        )}
+
+        {!error && slices && slices.length > 0 && (
+          <>
+            <ChartContainer
+              config={chartConfig}
+              className="mx-auto aspect-square max-h-[220px]"
+            >
+              <PieChart>
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent hideLabel />}
+                />
+                <Pie
+                  data={slices}
+                  dataKey="count"
+                  nameKey="label"
+                  innerRadius={70}
+                  outerRadius={100}
+                  strokeWidth={4}
+                  paddingAngle={2}
+                >
+                  {slices.map((entry) => (
+                    <Cell key={entry.label} fill={entry.fg} />
+                  ))}
+                  <Label
+                    content={({ viewBox }) => {
+                      if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                        return (
+                          <text
+                            x={viewBox.cx}
+                            y={viewBox.cy}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                          >
+                            <tspan
+                              x={viewBox.cx}
+                              y={viewBox.cy}
+                              className="fill-foreground text-2xl font-semibold"
+                            >
+                              {total}
+                            </tspan>
+                            <tspan
+                              x={viewBox.cx}
+                              y={(viewBox.cy || 0) + 22}
+                              className="fill-muted-foreground text-sm"
+                            >
+                              Projects
+                            </tspan>
+                          </text>
+                        );
+                      }
+                    }}
+                  />
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              {slices.map((s) => (
+                <span key={s.label} className="flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-sm"
+                    style={{ backgroundColor: s.fg }}
+                  />
+                  <span className="truncate text-muted-foreground">
+                    {s.label}
+                    <span className="ml-1 text-foreground/70">
+                      {total > 0 ? Math.round((s.count / total) * 100) : 0}%
+                    </span>
+                  </span>
                 </span>
-              </span>
-            </span>
-          ))}
-        </div>
+              ))}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
