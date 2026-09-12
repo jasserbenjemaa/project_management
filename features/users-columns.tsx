@@ -212,179 +212,202 @@ interface ColumnActions {
   // Optional: if provided, clicking a user's name navigates (e.g. to a
   // detail page) instead of just rendering static text.
   onNameClick?: (user: UserRow) => void;
+  // Column ids to leave out entirely - e.g. the Engagement Managers page
+  // hides "role" and "seniority_level" since every row is the same role
+  // and seniority doesn't apply to that role. "name" and "actions" always
+  // show regardless of what's passed here.
+  hiddenColumns?: Array<
+    "role" | "seniority_level" | "artifact_type" | "projects"
+  >;
 }
 
 export const getUserColumns = ({
   onEdit,
   onDelete,
   onNameClick,
-}: ColumnActions): ColumnDef<UserRow>[] => [
-  {
-    accessorKey: "name",
-    header: ({ column }) => (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-3"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Name
-        <ArrowUpDown className="ml-2 size-3.5" />
-      </Button>
-    ),
-    cell: ({ row }) => {
-      const user = row.original;
-      const content = (
-        <div className="flex items-center gap-2">
-          <Avatar className="size-7">
-            <AvatarFallback className="text-xs">
-              {initials(user.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col text-left">
-            <span className="font-medium leading-none">{user.name}</span>
-            <span className="text-xs text-muted-foreground">{user.email}</span>
+  hiddenColumns = [],
+}: ColumnActions): ColumnDef<UserRow>[] => {
+  const hidden = new Set<string>(hiddenColumns);
+
+  const columns: ColumnDef<UserRow>[] = [
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-3"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Name
+          <ArrowUpDown className="ml-2 size-3.5" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const user = row.original;
+        const content = (
+          <div className="flex items-center gap-2">
+            <Avatar className="size-7">
+              <AvatarFallback className="text-xs">
+                {initials(user.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col text-left">
+              <span className="font-medium leading-none">{user.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {user.email}
+              </span>
+            </div>
           </div>
+        );
+
+        if (!onNameClick) return content;
+
+        return (
+          <button
+            className="w-full"
+            onClick={(e) => {
+              e.stopPropagation();
+              onNameClick(user);
+            }}
+          >
+            {content}
+          </button>
+        );
+      },
+      filterFn: (row, _id, value: string) => {
+        const user = row.original;
+        const needle = value.toLowerCase();
+        return (
+          user.name.toLowerCase().includes(needle) ||
+          user.email.toLowerCase().includes(needle)
+        );
+      },
+    },
+    {
+      accessorKey: "role",
+      header: ({ column }) => (
+        <SortableHeader
+          label="Role"
+          isSorted={column.getIsSorted()}
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        />
+      ),
+      cell: ({ row }) => {
+        const role = ROLE_CONFIG[row.getValue("role") as UserRole];
+        return (
+          <Badge variant="secondary" className={role.className}>
+            {role.label}
+          </Badge>
+        );
+      },
+      // Custom priority order instead of alphabetical: Engagement Manager
+      // ranks first, so it's on top by default (ascending sort).
+      sortingFn: (rowA, rowB) => {
+        const a = ROLE_SORT_RANK[rowA.original.role];
+        const b = ROLE_SORT_RANK[rowB.original.role];
+        return a - b;
+      },
+      filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)),
+    },
+    {
+      accessorKey: "seniority_level",
+      header: "Seniority",
+      cell: ({ row }) => {
+        const level = row.getValue("seniority_level") as SeniorityLevel | null;
+        if (!level) return <span className="text-muted-foreground">—</span>;
+        const config = SENIORITY_CONFIG[level];
+        return (
+          <Badge variant="secondary" className={config.className}>
+            {config.label}
+          </Badge>
+        );
+      },
+    },
+    {
+      accessorKey: "artifact_type",
+      header: "Artifact",
+      cell: ({ row }) => {
+        const artifact = row.getValue("artifact_type") as ArtifactType | null;
+        if (!artifact) return <span className="text-muted-foreground">—</span>;
+        const config = ARTIFACT_CONFIG[artifact];
+        return (
+          <Badge variant="secondary" className={config.className}>
+            {config.label}
+          </Badge>
+        );
+      },
+      filterFn: (row, id, value: string) =>
+        value === "all" || row.getValue(id) === value,
+    },
+
+    {
+      id: "projects",
+      header: "Projects",
+      cell: ({ row }) => {
+        const projects = row.original.projects;
+        if (!projects.length)
+          return <span className="text-muted-foreground">—</span>;
+        const visible = projects.slice(0, 2);
+        const remaining = projects.length - visible.length;
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            {visible.map((project) => (
+              <Badge key={project.id} variant="outline">
+                {project.name}
+              </Badge>
+            ))}
+            {remaining > 0 && <Badge variant="outline">+{remaining}</Badge>}
+          </div>
+        );
+      },
+      // Used by the "Project" select filter: matches if the user is assigned
+      // to the selected project id, or always matches when value is "all".
+      filterFn: (row, _id, value: string) => {
+        if (value === "all") return true;
+        return row.original.projects.some((project) => project.id === value);
+      },
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => (
+        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(row.original);
+            }}
+          >
+            <PencilIcon className="size-3.5" />
+            <span className="sr-only">Edit</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(row.original);
+            }}
+          >
+            <TrashIcon className="size-3.5" />
+            <span className="sr-only">Delete</span>
+          </Button>
         </div>
-      );
+      ),
+    },
+  ];
 
-      if (!onNameClick) return content;
+  // Accessor-based columns (name/role/seniority_level/artifact_type) key off
+  // `accessorKey`; the rest (projects/actions) have an explicit `id`.
+  const columnKey = (col: ColumnDef<UserRow>): string =>
+    "accessorKey" in col
+      ? (col.accessorKey as string)
+      : ((col.id as string) ?? "");
 
-      return (
-        <button
-          className="w-full"
-          onClick={(e) => {
-            e.stopPropagation();
-            onNameClick(user);
-          }}
-        >
-          {content}
-        </button>
-      );
-    },
-    filterFn: (row, _id, value: string) => {
-      const user = row.original;
-      const needle = value.toLowerCase();
-      return (
-        user.name.toLowerCase().includes(needle) ||
-        user.email.toLowerCase().includes(needle)
-      );
-    },
-  },
-  {
-    accessorKey: "role",
-    header: ({ column }) => (
-      <SortableHeader
-        label="Role"
-        isSorted={column.getIsSorted()}
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      />
-    ),
-    cell: ({ row }) => {
-      const role = ROLE_CONFIG[row.getValue("role") as UserRole];
-      return (
-        <Badge variant="secondary" className={role.className}>
-          {role.label}
-        </Badge>
-      );
-    },
-    // Custom priority order instead of alphabetical: Engagement Manager
-    // ranks first, so it's on top by default (ascending sort).
-    sortingFn: (rowA, rowB) => {
-      const a = ROLE_SORT_RANK[rowA.original.role];
-      const b = ROLE_SORT_RANK[rowB.original.role];
-      return a - b;
-    },
-    filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)),
-  },
-  {
-    accessorKey: "seniority_level",
-    header: "Seniority",
-    cell: ({ row }) => {
-      const level = row.getValue("seniority_level") as SeniorityLevel | null;
-      if (!level) return <span className="text-muted-foreground">—</span>;
-      const config = SENIORITY_CONFIG[level];
-      return (
-        <Badge variant="secondary" className={config.className}>
-          {config.label}
-        </Badge>
-      );
-    },
-  },
-  {
-    accessorKey: "artifact_type",
-    header: "Artifact",
-    cell: ({ row }) => {
-      const artifact = row.getValue("artifact_type") as ArtifactType | null;
-      if (!artifact) return <span className="text-muted-foreground">—</span>;
-      const config = ARTIFACT_CONFIG[artifact];
-      return (
-        <Badge variant="secondary" className={config.className}>
-          {config.label}
-        </Badge>
-      );
-    },
-    filterFn: (row, id, value: string) =>
-      value === "all" || row.getValue(id) === value,
-  },
-
-  {
-    id: "projects",
-    header: "Projects",
-    cell: ({ row }) => {
-      const projects = row.original.projects;
-      if (!projects.length)
-        return <span className="text-muted-foreground">—</span>;
-      const visible = projects.slice(0, 2);
-      const remaining = projects.length - visible.length;
-      return (
-        <div className="flex flex-wrap items-center gap-1">
-          {visible.map((project) => (
-            <Badge key={project.id} variant="outline">
-              {project.name}
-            </Badge>
-          ))}
-          {remaining > 0 && <Badge variant="outline">+{remaining}</Badge>}
-        </div>
-      );
-    },
-    // Used by the "Project" select filter: matches if the user is assigned
-    // to the selected project id, or always matches when value is "all".
-    filterFn: (row, _id, value: string) => {
-      if (value === "all") return true;
-      return row.original.projects.some((project) => project.id === value);
-    },
-  },
-  {
-    id: "actions",
-    header: "",
-    cell: ({ row }) => (
-      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit(row.original);
-          }}
-        >
-          <PencilIcon className="size-3.5" />
-          <span className="sr-only">Edit</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 text-destructive hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(row.original);
-          }}
-        >
-          <TrashIcon className="size-3.5" />
-          <span className="sr-only">Delete</span>
-        </Button>
-      </div>
-    ),
-  },
-];
+  return columns.filter((col) => !hidden.has(columnKey(col)));
+};

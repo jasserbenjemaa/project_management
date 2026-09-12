@@ -4,13 +4,14 @@ interface CircularProgressProps {
   size?: number;
   strokeWidth?: number;
 }
-
 export function CircularProgress({
   value,
   size = 36,
   strokeWidth = 4,
 }: CircularProgressProps) {
-  const clamped = Math.min(100, Math.max(0, value));
+  const clamped = Number.isFinite(value)
+    ? Math.min(100, Math.max(0, value))
+    : 0;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (clamped / 100) * circumference;
@@ -28,7 +29,6 @@ export function CircularProgress({
       style={{ width: size, height: size }}
     >
       <svg width={size} height={size} className="-rotate-90">
-        {/* track */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -36,7 +36,6 @@ export function CircularProgress({
           strokeWidth={strokeWidth}
           className="stroke-muted fill-none"
         />
-        {/* progress */}
         <circle
           cx={size / 2}
           cy={size / 2}

@@ -20,6 +20,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import {
   Project,
   ProjectStatus,
   STATUS_CONFIG,
@@ -44,6 +53,7 @@ export const ProjectFormDialog = ({
 }: ProjectFormDialogProps) => {
   const [name, setName] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("PLANNED");
+  const [deliveryDate, setDeliveryDate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -54,6 +64,11 @@ export const ProjectFormDialog = ({
     if (open) {
       setName(project?.name ?? "");
       setStatus(project?.status ?? "PLANNED");
+      // TODO: `Project` (features/projects-columns.tsx) needs a
+      // `deliveryDate` field for this to prefill on edit.
+      setDeliveryDate(
+        project?.deliveryDate ? new Date(project.deliveryDate) : null,
+      );
       setError(null);
     }
   }, [open, project]);
@@ -62,8 +77,8 @@ export const ProjectFormDialog = ({
     setError(null);
     startTransition(async () => {
       const result = isEditing
-        ? await updateProject(project!.id, { name, status })
-        : await createProject({ name, status });
+        ? await updateProject(project!.id, { name, status, deliveryDate })
+        : await createProject({ name, status, deliveryDate });
 
       if (!result.success) {
         setError(result.error);
@@ -118,6 +133,45 @@ export const ProjectFormDialog = ({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label>Delivery date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "justify-start text-left font-normal",
+                    !deliveryDate && "text-muted-foreground",
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {deliveryDate ? format(deliveryDate, "PPP") : "Not set"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={deliveryDate ?? undefined}
+                  onSelect={(date) => setDeliveryDate(date ?? null)}
+                  initialFocus
+                />
+                {deliveryDate && (
+                  <div className="border-t p-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setDeliveryDate(null)}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

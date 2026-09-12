@@ -413,6 +413,7 @@ const initialColumns: GridColumn[] = [
   { title: "Priority", id: "priority", width: 90 },
   { title: "LLR ID", id: "llrId", width: 110 },
   { title: "Function Name", id: "functionName", width: 160 },
+  { title: "Complexity", id: "complexity", width: 100 },
   { title: "File .c", id: "fileC", width: 150 },
   { title: "Code Version", id: "codeVersion", width: 110 },
   { title: "Author LLR", id: "authorLLR", width: 130 },
@@ -429,6 +430,7 @@ const seedData: RowData[] = [
     priority: "1",
     llrId: "LLR-0001",
     functionName: "compute_checksum",
+    complexity: "3",
     fileC: "checksum.c",
     codeVersion: "v1.2.0",
     authorLLR: "J. Martin",
@@ -443,6 +445,7 @@ const seedData: RowData[] = [
     priority: "2",
     llrId: "LLR-0002",
     functionName: "init_sensor",
+    complexity: "5",
     fileC: "sensor_init.c",
     codeVersion: "v1.0.4",
     authorLLR: "A. Petit",
@@ -1023,6 +1026,9 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
   // rows. Deliberately ignores other columns' active filters, so opening
   // one column's filter never shows a narrower list because of another —
   // simpler and more predictable than Excel's contextual narrowing.
+  // Blank cells are intentionally excluded from the checkbox list — this
+  // filter is only for choosing among actual values, not for toggling
+  // blanks in/out.
   const filterColumnValues = useMemo(() => {
     if (!headerMenu) return [];
     const colId = headerMenu.colId;
@@ -1048,9 +1054,14 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
       return;
     }
     const existing = columnFilters[headerMenu.colId];
-    const seen = new Set<string>();
-    data.forEach((row) => seen.add(row?.[headerMenu.colId] ?? ""));
-    setPendingFilterValues(existing ? new Set(existing) : seen);
+    // Seed from filterColumnValues (the same universe the checkbox list
+    // renders and "select all" toggles against), not by re-scanning `data`
+    // independently — keeping one source of truth avoids the two ever
+    // drifting apart (e.g. sets with different sizes but the same
+    // intended contents).
+    setPendingFilterValues(
+      existing ? new Set(existing) : new Set(filterColumnValues),
+    );
     setFilterSearch("");
     // Only re-seed when a *different column's* menu opens, not on every
     // keystroke elsewhere — deliberately excludes columnFilters/data.
@@ -1090,8 +1101,15 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
       const next = { ...prev };
       // Every known value checked is the same as "no filter" — and keeping
       // it that way means a value typed into a *new* row later shows up
-      // automatically instead of being silently excluded.
-      if (pendingFilterValues.size >= filterColumnValues.length) {
+      // automatically instead of being silently excluded. Compare by
+      // actual contents, not just size: a mismatched size can hide the
+      // fact that one value was swapped for another (e.g. a real value
+      // unchecked while blank stayed checked), which would otherwise get
+      // treated as "select all" and silently drop the filter.
+      const isEverythingSelected =
+        pendingFilterValues.size === filterColumnValues.length &&
+        filterColumnValues.every((v) => pendingFilterValues.has(v));
+      if (isEverythingSelected) {
         delete next[colId];
       } else {
         next[colId] = new Set(pendingFilterValues);
@@ -1552,8 +1570,7 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
         // Funnel icon instead of the default triangle, so it's obvious the
         // dropdown offers filtering — filled/colored once a filter is set.
         menuIcon: (c.id && columnFilters[c.id] ? "filterActive" : "filter") as
-          | string
-          | undefined,
+          string | undefined,
       })),
     ],
     [columns, columnFilters],

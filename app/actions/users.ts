@@ -20,11 +20,16 @@ export type UserFormInput = {
   role: Role;
   seniority_level: Level | null;
   artifact_type: Artifact | null;
-  // Single "primary" project assignment - see the note on
-  // `UserRow.primaryAssignment` in users-columns.tsx. Manager, role-on-
-  // project, start date, and assigned-by are no longer collected by the
-  // form; the server fills in sane defaults below when a project is set.
-  projectId: string | null;
+  // Ids of every project this user should be assigned to. On update this is
+  // diffed against the user's existing Assignment rows: ids no longer
+  // present are removed, new ids get an Assignment created, ids present in
+  // both are left in place (aside from a snapshot refresh). Role-on-project,
+  // start date, and assigned-by are no longer collected by the form; the
+  // server fills in sane defaults below for any newly created assignment.
+  projectIds: string[];
+  // Only meaningful on create - see createUser. updateUser ignores this
+  // entirely so a user's hire date can never be changed after the fact.
+  hiredAt: Date | null;
 };
 
 type ActionResult = { success: true } | { success: false; error: string };
@@ -79,7 +84,13 @@ export async function createUser(input: UserFormInput): Promise<ActionResult> {
       return { success: false, error: "Password is required." };
     }
 
-    const assignedById = await requireCurrentUserId();
+    const projectIds = input.projectIds ?? [];
+    const [assignedById, projects] = await Promise.all([
+      requireCurrentUserId(),
+      projectIds.length
+        ? db.project.findMany({ where: { id: { in: projectIds } } })
+        : Promise.resolve([]),
+    ]);
     const hashed = await bcrypt.hash(input.password, 10);
 
     await db.user.create({
@@ -90,21 +101,18 @@ export async function createUser(input: UserFormInput): Promise<ActionResult> {
         role: input.role,
         seniority_level: input.seniority_level,
         artifact_type: input.artifact_type,
-        assignments: input.projectId
+        hiredAt: input.hiredAt ?? new Date(),
+        assignments: projects.length
           ? {
-              create: {
-                projectId: input.projectId,
+              create: projects.map((project) => ({
+                projectId: project.id,
                 roleOnProject: input.role,
                 startDate: new Date(),
                 assignedById,
                 userName: input.name,
                 userEmail: input.email,
-                projectName: (
-                  await db.project.findUniqueOrThrow({
-                    where: { id: input.projectId },
-                  })
-                ).name,
-              },
+                projectName: project.name,
+              })),
             }
           : undefined,
       },
@@ -136,50 +144,55 @@ export async function updateUser(
       },
     });
 
-    const existing = await db.assignment.findFirst({ where: { userId } });
+    const nextProjectIds = new Set(input.projectIds ?? []);
+    const existing = await db.assignment.findMany({ where: { userId } });
 
-    if (input.projectId) {
-      // Snapshot fields (userName/userEmail/projectName) must always stay in
-      // sync with the current form input, regardless of which branch below
-      // runs, so we resolve the project name once up front.
-      const project = await db.project.findUniqueOrThrow({
-        where: { id: input.projectId },
-      });
+    // Assignments whose project is no longer in the selected list get
+    // dropped; ones whose project is still selected just get their
+    // name/email snapshot refreshed; anything newly selected gets created.
+    const toRemove = existing.filter(
+      (a) => !a.projectId || !nextProjectIds.has(a.projectId),
+    );
+    const toKeep = existing.filter(
+      (a) => a.projectId && nextProjectIds.has(a.projectId),
+    );
+    const existingProjectIds = new Set(
+      existing.map((a) => a.projectId).filter((id): id is string => !!id),
+    );
+    const toAddIds = [...nextProjectIds].filter(
+      (id) => !existingProjectIds.has(id),
+    );
 
-      if (existing) {
-        await db.assignment.update({
-          where: { id: existing.id },
-          data: {
-            projectId: input.projectId,
-            userName: input.name,
-            userEmail: input.email,
-            projectName: project.name,
-            ...(existing.projectId !== input.projectId
-              ? {
-                  roleOnProject: input.role,
-                  startDate: new Date(),
-                  assignedById: await requireCurrentUserId(),
-                }
-              : {}),
-          },
-        });
-      } else {
-        await db.assignment.create({
+    const [assignedById, newProjects] = await Promise.all([
+      toAddIds.length ? requireCurrentUserId() : Promise.resolve(null),
+      toAddIds.length
+        ? db.project.findMany({ where: { id: { in: toAddIds } } })
+        : Promise.resolve([]),
+    ]);
+
+    await db.$transaction([
+      ...toRemove.map((a) => db.assignment.delete({ where: { id: a.id } })),
+      ...toKeep.map((a) =>
+        db.assignment.update({
+          where: { id: a.id },
+          data: { userName: input.name, userEmail: input.email },
+        }),
+      ),
+      ...newProjects.map((project) =>
+        db.assignment.create({
           data: {
             userId,
-            projectId: input.projectId,
+            projectId: project.id,
             roleOnProject: input.role,
             startDate: new Date(),
-            assignedById: await requireCurrentUserId(),
+            assignedById: assignedById as string,
             userName: input.name,
             userEmail: input.email,
             projectName: project.name,
           },
-        });
-      }
-    } else if (existing) {
-      await db.assignment.delete({ where: { id: existing.id } });
-    }
+        }),
+      ),
+    ]);
 
     revalidatePath("/users");
     return { success: true };

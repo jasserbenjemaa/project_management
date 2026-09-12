@@ -9,10 +9,26 @@ import { createSheetForProject, renameSheetForProject } from "./sheet";
 const PROJECTS_PATH = "/projects";
 const SHEETS_PATH = "/sheets";
 
+// LIST (lightweight - for populating selects/dropdowns, e.g. the Project
+// field in the user form dialog). Returns just id/name, sorted by name.
+export async function getProjectOptions() {
+  try {
+    const projects = await db.project.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+    return { success: true, projects } as const;
+  } catch (error) {
+    console.error("Failed to fetch project options", error);
+    return { success: false, error: "Failed to fetch projects." } as const;
+  }
+}
+
 // CREATE
 export async function createProject(input: {
   name: string;
   status: ProjectStatus;
+  deliveryDate?: Date | null;
 }) {
   const name = input.name.trim();
   if (!name) {
@@ -21,7 +37,11 @@ export async function createProject(input: {
 
   try {
     const project = await db.project.create({
-      data: { name, status: input.status },
+      data: {
+        name,
+        status: input.status,
+        deliveryDate: input.deliveryDate ?? null,
+      },
     });
 
     // Every project gets exactly one sheet, named "FiAv-{project name}".
@@ -45,7 +65,7 @@ export async function createProject(input: {
 // UPDATE
 export async function updateProject(
   id: string,
-  input: { name: string; status: ProjectStatus },
+  input: { name: string; status: ProjectStatus; deliveryDate?: Date | null },
 ) {
   const name = input.name.trim();
   if (!name) {
@@ -55,7 +75,11 @@ export async function updateProject(
   try {
     const project = await db.project.update({
       where: { id },
-      data: { name, status: input.status },
+      data: {
+        name,
+        status: input.status,
+        deliveryDate: input.deliveryDate ?? null,
+      },
     });
 
     // Keep the sheet tab name ("FiAv-{name}") in sync with the project.

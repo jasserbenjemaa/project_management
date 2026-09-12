@@ -1,54 +1,92 @@
 "use client";
 
-import * as React from "react";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { CalendarIcon, Download } from "lucide-react";
+  ArrowUp,
+  ArrowDown,
+  CalendarClock,
+  Loader2,
+  PauseCircle,
+  CheckCircle2,
+  type LucideIcon,
+} from "lucide-react";
 
-function formatDate(date: Date) {
-  return `${date.getDate()} / ${date.getMonth() + 1} / ${date.getFullYear()}`;
-}
+type Stage = {
+  label: string;
+  count: number;
+  trend: number;
+  icon: LucideIcon;
+  fg: string;
+};
 
-export default function KpiHeader() {
-  const [date, setDate] = React.useState<Date | undefined>(new Date());
+const stages: Stage[] = [
+  {
+    label: "Planned",
+    count: 18,
+    trend: 8.5,
+    icon: CalendarClock,
+    fg: "#378ADD",
+  },
+  {
+    label: "In progress",
+    count: 42,
+    trend: 15.2,
+    icon: Loader2,
+    fg: "#6D5DF2",
+  },
+  { label: "On hold", count: 7, trend: -4.1, icon: PauseCircle, fg: "#D85A30" },
+  {
+    label: "Completed",
+    count: 63,
+    trend: 22.5,
+    icon: CheckCircle2,
+    fg: "#0D9488",
+  },
+];
+
+function StatusItem({ label, count, trend, icon: Icon, fg }: Stage) {
+  const isUp = trend >= 0;
+  const TrendIcon = isUp ? ArrowUp : ArrowDown;
 
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">KPI overview</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Analyze trends, track growth, and make data-driven decisions.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Popover>
-          <PopoverTrigger>
-            <Button variant="outline" className="gap-2 font-normal">
-              <CalendarIcon className="h-4 w-4" />
-              {date ? formatDate(date) : "Pick a date"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={setDate}
-              captionLayout="dropdown"
-            />
-          </PopoverContent>
-        </Popover>
-
-        <Button className="gap-2">
-          <Download className="h-4 w-4" />
-          Export
-        </Button>
+    <div className="flex flex-1 items-center gap-4 px-6 py-5">
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: `${fg}1A` }}
+      >
+        <Icon className="h-4 w-4" style={{ color: fg }} strokeWidth={2} />
+      </span>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-semibold tracking-tight">{count}</span>
+          <span
+            className={`flex items-center gap-0.5 text-xs font-medium ${
+              isUp ? "text-emerald-600" : "text-rose-600"
+            }`}
+          >
+            <TrendIcon className="h-3 w-3" />
+            {Math.abs(trend)}%
+          </span>
+        </div>
       </div>
     </div>
+  );
+}
+
+export default function StatusOverview() {
+  return (
+    <Card className="rounded-2xl border-border/60 shadow-sm">
+      <CardHeader className="border-b border-border/60">
+        <CardTitle className="text-base font-semibold">
+          Project management analytics
+        </CardTitle>
+      </CardHeader>
+      <div className="flex flex-col divide-y divide-border/60 sm:flex-row sm:divide-x sm:divide-y-0">
+        {stages.map((s) => (
+          <StatusItem key={s.label} {...s} />
+        ))}
+      </div>
+    </Card>
   );
 }

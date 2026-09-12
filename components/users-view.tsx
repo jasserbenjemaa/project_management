@@ -130,15 +130,37 @@ export const UsersView = ({
     });
   }, [users, filters, effectiveRole, effectiveProjectId]);
 
+  // Per-page column visibility:
+  // - Engagement Managers page: every row is the same role and seniority
+  //   doesn't apply to that role, so both are redundant here.
+  // - Consultants page: role is redundant for the same reason.
+  // - A single-project page: the Projects column is redundant since it's
+  //   always that one project.
+  const hiddenColumns = useMemo(() => {
+    const hidden: Array<
+      "role" | "seniority_level" | "artifact_type" | "projects"
+    > = [];
+    if (fixedRole === "ENGAGEMENT_MANAGER") {
+      hidden.push("role", "seniority_level");
+    } else if (fixedRole === "CONSULTANT") {
+      hidden.push("role");
+    }
+    if (fixedProject) {
+      hidden.push("projects");
+    }
+    return hidden;
+  }, [fixedRole, fixedProject]);
+
   const tableColumns = useMemo(
     () =>
       getUserColumns({
         onEdit: handleEditUser,
         onDelete: handleDeleteUser,
         onNameClick: (user) => handleUserClick(user.id),
+        hiddenColumns,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [hiddenColumns],
   );
 
   const showAssignButton = !!fixedProject;

@@ -14,7 +14,7 @@ export type Project = {
   name: string;
   status: ProjectStatus;
   progress: number; // 0-100
-  deadline: string | null; // ISO string, nullable if no deadline set
+  deliveryDate: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -49,9 +49,9 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-const isOverdue = (deadline: string | null, status: ProjectStatus) => {
-  if (!deadline || status === "COMPLETED") return false;
-  return new Date(deadline).getTime() < Date.now();
+const isOverdue = (deliveryDate: string | null, status: ProjectStatus) => {
+  if (!deliveryDate || status === "COMPLETED") return false;
+  return new Date(deliveryDate).getTime() < Date.now();
 };
 
 interface ColumnActions {
@@ -119,7 +119,7 @@ export const getColumns = ({
       sortingFn: (a, b) => a.original.progress - b.original.progress,
     },
     {
-      accessorKey: "deadline",
+      accessorKey: "deliveryDate",
       header: ({ column }) => {
         return (
           <Button
@@ -128,15 +128,15 @@ export const getColumns = ({
             className="-ml-3"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            Deadline
+            Delivery Date
             <ArrowUpDown className="ml-2 size-3.5" />
           </Button>
         );
       },
       cell: ({ row }) => {
-        const deadline = row.getValue("deadline") as string | null;
-        const overdue = isOverdue(deadline, row.original.status);
-        if (!deadline) {
+        const deliveryDate = row.getValue("deliveryDate") as string | null;
+        const overdue = isOverdue(deliveryDate, row.original.status);
+        if (!deliveryDate) {
           return <span className="text-muted-foreground">—</span>;
         }
         return (
@@ -145,16 +145,16 @@ export const getColumns = ({
               overdue ? "text-destructive font-medium" : "text-muted-foreground"
             }
           >
-            {formatDate(deadline)}
+            {formatDate(deliveryDate)}
           </span>
         );
       },
       sortingFn: (a, b) => {
-        const aTime = a.original.deadline
-          ? new Date(a.original.deadline).getTime()
+        const aTime = a.original.deliveryDate
+          ? new Date(a.original.deliveryDate).getTime()
           : Infinity;
-        const bTime = b.original.deadline
-          ? new Date(b.original.deadline).getTime()
+        const bTime = b.original.deliveryDate
+          ? new Date(b.original.deliveryDate).getTime()
           : Infinity;
         return aTime - bTime;
       },

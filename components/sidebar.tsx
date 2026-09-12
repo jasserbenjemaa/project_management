@@ -1,4 +1,5 @@
 "use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
@@ -28,11 +29,13 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Image from "next/image";
 import { DottedSeparator } from "./dotted-separator";
 import { useUser } from "@/context/user-context";
-// `allowedRoles` omitted means visible to everyone.
+
+// allowedRoles omitted = visible to everyone
 type Role = "UNIT_MANAGER" | "ENGAGEMENT_MANAGER" | "CONSULTANT";
 
 const navGroups: {
@@ -47,8 +50,16 @@ const navGroups: {
   {
     label: "Overview",
     items: [
-      { linkTo: "/", icon: Home, name: "Home" },
-      { linkTo: "/projects", icon: FolderOpen, name: "Projects" },
+      {
+        linkTo: "/",
+        icon: Home,
+        name: "Home",
+      },
+      {
+        linkTo: "/projects",
+        icon: FolderOpen,
+        name: "Projects",
+      },
       {
         linkTo: "/projects/history",
         icon: ScrollText,
@@ -83,16 +94,39 @@ const navGroups: {
         name: "Progress Table",
         allowedRoles: ["UNIT_MANAGER"],
       },
-      { linkTo: "/kpi", icon: ChartColumnBig, name: "KPIs" },
+      {
+        linkTo: "/kpi",
+        icon: ChartColumnBig,
+        name: "KPIs",
+      },
     ],
   },
 ];
 
 export function NavSidebar() {
-  const { name, role } = useUser();
+  const userData = useUser();
   const { state, toggleSidebar, isMobile } = useSidebar();
   const pathname = usePathname();
+
   const isExpanded = state === "expanded";
+
+  /*
+   * IMPORTANT:
+   * Do NOT call signOut() here.
+   *
+   * This component is rendered on the client and calling a Server Action
+   * during render can cause:
+   *
+   * "Cookies can only be modified in a Server Action or Route Handler."
+   *
+   * If there is no user, simply don't render the sidebar.
+   */
+  if (!userData) {
+    return null;
+  }
+
+  const { name, role } = userData;
+
   const visibleGroups = navGroups
     .map((group) => ({
       ...group,
@@ -102,18 +136,27 @@ export function NavSidebar() {
       ),
     }))
     .filter((group) => group.items.length > 0);
+
   const revealText = isMobile
     ? "truncate opacity-100 translate-x-0"
     : "truncate opacity-0 -translate-x-1 transition-all duration-200 ease-out " +
-      "group-data-[state=expanded]:opacity-100 group-data-[state=expanded]:translate-x-0 " +
+      "group-data-[state=expanded]:opacity-100 " +
+      "group-data-[state=expanded]:translate-x-0 " +
       "group-data-[collapsible=icon]:hidden";
 
   const handleIconClick = () => {
-    if (!isExpanded) toggleSidebar();
+    if (!isExpanded) {
+      toggleSidebar();
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
   };
 
   return (
     <Sidebar collapsible="icon">
+      {/* HEADER */}
       <SidebarHeader className="flex flex-col pt-3">
         <div className="flex items-center justify-between gap-2 p-2 group-data-[collapsible=icon]:pl-0.3 group-data-[collapsible=icon]:justify-center">
           <button
@@ -137,6 +180,7 @@ export function NavSidebar() {
                     : ""
                 }`}
               />
+
               {!isExpanded && (
                 <PanelLeftOpen
                   width={18}
@@ -166,6 +210,7 @@ export function NavSidebar() {
         </div>
       </SidebarHeader>
 
+      {/* CONTENT */}
       <SidebarContent className="group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:pl-0.5">
         {visibleGroups.map((group, idx) => (
           <SidebarGroup
@@ -175,13 +220,16 @@ export function NavSidebar() {
             {idx === 0 && (
               <DottedSeparator className="pb-3 group-data-[collapsible=icon]:hidden" />
             )}
+
             <SidebarGroupLabel className={revealText}>
               {group.label}
             </SidebarGroupLabel>
+
             <SidebarGroupContent>
               <SidebarMenu className="group-data-[collapsible=icon]:gap-0">
                 {group.items.map((item) => {
                   const isActive = pathname === item.linkTo;
+
                   return (
                     <SidebarMenuItem key={item.linkTo}>
                       <Link href={item.linkTo} className="block min-w-0">
@@ -190,6 +238,7 @@ export function NavSidebar() {
                           isActive={isActive}
                         >
                           <item.icon size={16} className="shrink-0" />
+
                           <span className={revealText}>{item.name}</span>
                         </SidebarMenuButton>
                       </Link>
@@ -202,6 +251,7 @@ export function NavSidebar() {
         ))}
       </SidebarContent>
 
+      {/* FOOTER */}
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem className="m-2 flex items-center gap-2 group-data-[collapsible=icon]:m-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pb-2.5">
@@ -214,17 +264,20 @@ export function NavSidebar() {
                   {name.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
+
               <div className="flex min-w-0 flex-1 flex-col text-left leading-tight group-data-[collapsible=icon]:hidden">
                 <span className="truncate text-sm font-medium">{name}</span>
+
                 <span className="truncate text-[0.6rem] text-muted-foreground">
                   {role.toLowerCase()}
                 </span>
               </div>
             </SidebarMenuButton>
 
+            {/* LOGOUT */}
             <button
               type="button"
-              onClick={async () => signOut()}
+              onClick={handleSignOut}
               aria-label="Log out"
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-200 ease-out hover:bg-accent hover:text-foreground ${revealText} !translate-x-0`}
             >

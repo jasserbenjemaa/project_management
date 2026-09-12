@@ -14,6 +14,7 @@ import { useState, useRef, useEffect } from "react";
 //
 //   llrId:        REQ-S001-FUNCT-NAME1
 //   functionName: Funct-Name1 Funct-Name2   (one or more, space separated)
+//   complexity:   whole number from 1 to 10
 //   fileC:        funct-name.c funct-name2.c (one or more, space separated)
 //   its:          ITS#1234
 //   iqa:          IQA#1234
@@ -28,6 +29,11 @@ export const FORMAT_RULES: Record<
   functionName: {
     pattern: /^Funct-[A-Za-z0-9]+(\s+Funct-[A-Za-z0-9]+)*$/,
     example: "Funct-Name1 Funct-Name2",
+  },
+  complexity: {
+    // Whole numbers 1 through 10 only.
+    pattern: /^(10|[1-9])$/,
+    example: "1-10",
   },
   fileC: {
     pattern: /^[A-Za-z0-9_-]+\.c(\s+[A-Za-z0-9_-]+\.c)*$/,

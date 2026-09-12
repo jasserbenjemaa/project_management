@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Tooltip,
@@ -53,11 +54,11 @@ function CalendarDayButton(props: React.ComponentProps<typeof DayButton>) {
         !modifiers.range_end &&
         !modifiers.range_middle
       }
-      className="relative flex h-9 w-9 flex-col items-center justify-center rounded-md text-sm aria-selected:bg-primary aria-selected:text-primary-foreground hover:bg-accent hover:text-accent-foreground"
+      className="relative flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-md text-base aria-selected:bg-primary aria-selected:text-primary-foreground hover:bg-accent hover:text-accent-foreground"
     >
       <span>{day.date.getDate()}</span>
       {dayEvents.length > 0 && (
-        <span className="mt-0.5 flex gap-0.5">
+        <span className="flex gap-0.5">
           {dayEvents.slice(0, 3).map((e, i) => (
             <span key={i} className={`h-1.5 w-1.5 rounded-full ${e.color}`} />
           ))}
@@ -91,18 +92,28 @@ function CalendarDemo() {
   const [date, setDate] = React.useState<Date | undefined>(new Date());
 
   return (
-    <TooltipProvider>
-      <Calendar
-        mode="single"
-        selected={date}
-        onSelect={setDate}
-        className="rounded-lg border"
-        captionLayout="dropdown"
-        components={{
-          DayButton: CalendarDayButton,
-        }}
-      />
-    </TooltipProvider>
+    <Card className="h-full rounded-2xl border-border/60 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-semibold">Calendar</CardTitle>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Upcoming events this month
+        </p>
+      </CardHeader>
+      <CardContent className="flex justify-center pb-6">
+        <TooltipProvider>
+          <Calendar
+            mode="single"
+            selected={date}
+            onSelect={setDate}
+            className="w-full rounded-lg border p-4"
+            captionLayout="dropdown"
+            components={{
+              DayButton: CalendarDayButton,
+            }}
+          />
+        </TooltipProvider>
+      </CardContent>
+    </Card>
   );
 }
 
