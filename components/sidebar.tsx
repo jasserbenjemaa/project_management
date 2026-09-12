@@ -92,7 +92,7 @@ const navGroups: {
         linkTo: "/sheets",
         icon: TableProperties,
         name: "Progress Table",
-        allowedRoles: ["UNIT_MANAGER"],
+        allowedRoles: ["UNIT_MANAGER", "ENGAGEMENT_MANAGER", "CONSULTANT"],
       },
       {
         linkTo: "/kpi",
@@ -156,7 +156,6 @@ export function NavSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      {/* HEADER */}
       <SidebarHeader className="flex flex-col pt-3">
         <div className="flex items-center justify-between gap-2 p-2 group-data-[collapsible=icon]:pl-0.3 group-data-[collapsible=icon]:justify-center">
           <button
@@ -251,7 +250,6 @@ export function NavSidebar() {
         ))}
       </SidebarContent>
 
-      {/* FOOTER */}
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem className="m-2 flex items-center gap-2 group-data-[collapsible=icon]:m-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pb-2.5">
@@ -274,7 +272,6 @@ export function NavSidebar() {
               </div>
             </SidebarMenuButton>
 
-            {/* LOGOUT */}
             <button
               type="button"
               onClick={handleSignOut}

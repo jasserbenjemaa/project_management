@@ -536,11 +536,16 @@ const AUTOSAVE_DEBOUNCE_MS = 800;
 
 interface SheetTableProps {
   sheetId: string;
+  // The project this sheet belongs to, or null for manually-created
+  // sheets. Used to scope the Author LLR/LLT autocomplete suggestions to
+  // consultants actually assigned to this project — see the
+  // getUserSuggestions effect below.
+  projectId: string | null;
   initialRows: RowData[];
 }
 export type { RowData };
 
-const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
+const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
   const [columns, setColumns] = useState<GridColumn[]>(initialColumns);
   const [data, setData] = useState<RowData[]>(() => [
     ...initialRows,
@@ -598,14 +603,22 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     "idle" | "saving" | "saved" | "error"
   >("idle");
 
-  // Users for the Author LLR / Author LLT autocomplete dropdowns. Fetched
-  // once — a project's user list doesn't change often enough to warrant
-  // refetching per keystroke or per cell.
+  // Users for the Author LLR / Author LLT autocomplete dropdowns. Scoped
+  // to consultants assigned to this sheet's project — refetched whenever
+  // the active project changes (e.g. switching sheet tabs).
   const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
 
   useEffect(() => {
+    // Manually-created sheets (no linked project) have no consultant pool
+    // to suggest from — leave suggestions empty rather than calling the
+    // action with a nonsensical id.
+    if (!projectId) {
+      setUserSuggestions([]);
+      return;
+    }
+
     let cancelled = false;
-    getUserSuggestions()
+    getUserSuggestions(projectId)
       .then((users) => {
         if (!cancelled) setUserSuggestions(users);
       })
@@ -613,7 +626,7 @@ const SheetTable = ({ sheetId, initialRows }: SheetTableProps) => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projectId]);
 
   // Suggestions per author column: users tagged with the matching
   // artifact_type, falling back to everyone if none are tagged yet.

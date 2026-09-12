@@ -226,18 +226,37 @@ export type UserSuggestion = {
   name: string;
   artifactType: string | null;
 };
-export async function getUserSuggestions(): Promise<UserSuggestion[]> {
-  const users = await db.user.findMany({
-    select: { id: true, name: true, artifact_type: true },
-    orderBy: { name: "asc" },
+
+// Suggests consultants currently assigned to a given project — e.g. for
+// project A's sheet, this returns only the consultants who have an
+// Assignment row for project A, not every user in the system.
+export async function getUserSuggestions(
+  projectId: string,
+): Promise<UserSuggestion[]> {
+  const assignments = await db.assignment.findMany({
+    where: {
+      projectId,
+      user: { role: "CONSULTANT" },
+    },
+    select: {
+      user: {
+        select: { id: true, name: true, artifact_type: true },
+      },
+    },
+    orderBy: { user: { name: "asc" } },
   });
 
-  return users.map((u) => ({
-    id: u.id,
-    name: u.name,
-    artifactType: u.artifact_type,
-  }));
+  return assignments
+    .filter(
+      (a): a is typeof a & { user: NonNullable<typeof a.user> } => !!a.user,
+    )
+    .map((a) => ({
+      id: a.user.id,
+      name: a.user.name,
+      artifactType: a.user.artifact_type,
+    }));
 }
+
 export async function assignUserToProject(
   userId: string,
   projectId: string,

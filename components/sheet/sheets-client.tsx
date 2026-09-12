@@ -30,14 +30,12 @@ export default function SheetsClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
 
-  // useState(tabs) only seeds the initial value — it does NOT resync when
-  // the `tabs` prop changes on a later render (e.g. after router.push to a
-  // new ?id=, or router.refresh()). Without this, newly added/deleted
-  // sheets only show up after a hard reload. Keep localTabs mirrored to
-  // whatever the server actually sent down.
   useEffect(() => {
     setLocalTabs(tabs);
   }, [tabs]);
+
+  const activeProjectId =
+    localTabs.find((t) => t.id === sheetId)?.projectId ?? null;
 
   const handleAddTab = async () => {
     const created = await createSheet(`Sheet ${localTabs.length + 1}`);
@@ -102,7 +100,12 @@ export default function SheetsClient({
   return (
     <div className="flex flex-col h-svh">
       <div className="flex-1 min-h-0 p-2">
-        <SheetTable key={sheetId} sheetId={sheetId} initialRows={initialRows} />
+        <SheetTable
+          key={sheetId}
+          sheetId={sheetId}
+          initialRows={initialRows}
+          projectId={activeProjectId}
+        />
       </div>
 
       <div className="flex items-center gap-1 border-t border-gray-200 bg-gray-50 px-2 py-1 overflow-x-auto">
