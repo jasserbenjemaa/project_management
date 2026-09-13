@@ -365,3 +365,45 @@ export async function deleteProject(id: string) {
     } as const;
   }
 }
+// Add to your server actions file (e.g., actions/project.ts)
+
+export async function getGlobalPipelineStats(): Promise<
+  | { success: true; total: number; stats: { label: string; count: number }[] }
+  | { success: false; error: string }
+> {
+  try {
+    // Fetch all sheets for the global KPI view
+    const sheets = await db.sheet.findMany({
+      select: { rows: true },
+    });
+
+    let total = 0;
+    const tally: Record<string, number> = {};
+    const DELIVERY_STATUS_COLUMN_ID = "statusLLTDate";
+
+    for (const sheet of sheets) {
+      if (!Array.isArray(sheet.rows)) continue;
+
+      const rows = sheet.rows as Record<string, string>[];
+      for (const row of rows) {
+        let status = row[DELIVERY_STATUS_COLUMN_ID];
+        if (!status) continue;
+
+        // Normalize any typos in the raw sheet data
+        if (status === "Out of scop") status = "Out of scope";
+
+        tally[status] = (tally[status] || 0) + 1;
+        total++;
+      }
+    }
+
+    const stats = Object.entries(tally)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return { success: true, total, stats };
+  } catch (error) {
+    console.error("Failed to fetch global pipeline stats", error);
+    return { success: false, error: "Failed to fetch global pipeline stats." };
+  }
+}
