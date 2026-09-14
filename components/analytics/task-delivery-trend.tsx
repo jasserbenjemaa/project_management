@@ -1,35 +1,14 @@
 "use client";
 
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-
-const trend = [
-  { day: "D1", delivered: 12 },
-  { day: "D2", delivered: 18 },
-  { day: "D3", delivered: 26 },
-  { day: "D4", delivered: 34 },
-  { day: "D5", delivered: 29 },
-  { day: "D6", delivered: 20 },
-  { day: "D7", delivered: 14 },
-  { day: "D8", delivered: 16 },
-  { day: "D9", delivered: 24 },
-  { day: "D10", delivered: 33 },
-  { day: "D11", delivered: 31 },
-  { day: "D12", delivered: 22 },
-  { day: "D13", delivered: 15 },
-  { day: "D14", delivered: 11 },
-];
+import type { DeliveryTrendPoint } from "@/app/actions/stats";
 
 const chartConfig = {
   delivered: {
@@ -38,7 +17,15 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-export default function TaskDeliveryTrend() {
+export default function TaskDeliveryTrend({
+  data = [],
+}: {
+  // Fetch with getTaskDeliveryTrend() in an async server component (see
+  // components/analytics/task-delivery-trend-section.tsx) and pass the
+  // result down — this component stays client-side purely because
+  // recharts needs the browser to render.
+  data?: DeliveryTrendPoint[];
+}) {
   return (
     <Card className="rounded-2xl border-border/60 shadow-sm">
       <CardHeader className="pb-2">
@@ -52,7 +39,7 @@ export default function TaskDeliveryTrend() {
       <CardContent>
         <ChartContainer config={chartConfig} className="h-[260px] w-full">
           <AreaChart
-            data={trend}
+            data={data}
             margin={{ left: 0, right: 12, top: 8, bottom: 0 }}
           >
             <defs>

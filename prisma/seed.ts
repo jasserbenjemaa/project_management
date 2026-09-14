@@ -23,7 +23,7 @@ const NUM_UNIT_MANAGERS = 2;
 const NUM_PROJECTS = 5;
 const EMS_PER_PROJECT = 5;
 const CONSULTANTS_PER_EM = 5;
-const TASKS_PER_PROJECT = 6;
+const ROWS_PER_EM = 4;
 
 const ARTIFACT_LABELS = ["HLT", "LLT", "LLR", "Code review", "Architecture"];
 
@@ -46,6 +46,7 @@ const SHEET_COLUMNS = [
   { title: "IQA", id: "iqa", width: 150 },
   { title: "Comment LLT", id: "commentLLT", width: 200 },
   { title: "Status LLT (JJ/MM/AAAA)", id: "statusLLTDate", width: 180 },
+  { title: "Estimation (days)", id: "estimationDays", width: 140 },
 ];
 
 const STATUS_LLT_OPTIONS = [
@@ -60,7 +61,31 @@ const STATUS_LLT_OPTIONS = [
   "Delivered",
   "Out of scop",
   "Blocked",
-];
+] as const;
+
+// Mirrors SHEET_STATUS_TO_TASK_STATUS in actions/sheet.ts — kept in sync
+// manually since the seed script builds Task rows directly instead of
+// going through saveSheet()'s sync path. "Out of scop" is the same typo
+// that's already baked into the real sheet data.
+const STATUS_LLT_TO_TASK_STATUS: Record<string, TaskStatus> = {
+  "In progress": TaskStatus.IN_PROGRESS,
+  "Ready for dry run": TaskStatus.READY_FOR_DRY_RUN,
+  "Dry run in progress": TaskStatus.DRY_RUN_IN_PROGRESS,
+  "Ready for TC": TaskStatus.READY_FOR_TC,
+  "TC Done": TaskStatus.TC_DONE,
+  "TC Correction": TaskStatus.TC_CORRECTION,
+  "Ready for QC": TaskStatus.READY_FOR_QC,
+  "Ready for Delivery": TaskStatus.READY_FOR_DELIVERY,
+  Delivered: TaskStatus.DELIVERED,
+  "Out of scop": TaskStatus.OUT_OF_SCOPE,
+  Blocked: TaskStatus.BLOCKED,
+};
+
+// Same id shape sheet-table.tsx generates client-side (ROW_ID_KEY /
+// genRowId). Every sheet row gets one, and it's what actions/sheet.ts's
+// syncSheetRowsToTasks keys Task.sheetRowId off of.
+const ROW_ID_KEY = "__rowId";
+const genRowId = (): string => crypto.randomUUID();
 
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -112,14 +137,14 @@ async function main() {
 
   const consultantLevels = Object.values(Level);
   const projectStatuses = Object.values(ProjectStatus);
-  const taskStatuses = Object.values(TaskStatus);
 
   let emCounter = 0;
   let consultantCounter = 0;
 
   // 3-8. one pass per project: create the project, its 5 EMs (each with a
   // distinct artifact role), 5 consultants under each EM (inheriting that
-  // role), tasks, assignments, time entries, and a populated Sheet.
+  // role), a Task + sheet row per line item (kept 1:1, same as the real
+  // sheet-save sync), assignments, and time entries.
   for (let p = 0; p < NUM_PROJECTS; p++) {
     const project = await prisma.project.create({
       data: {
@@ -130,26 +155,9 @@ async function main() {
 
     const assignedBy = pick(unitManagers);
 
-    // Tasks for this project (created up front so time entries can
-    // reference them).
-    const tasks = [];
-    for (let t = 0; t < TASKS_PER_PROJECT; t++) {
-      tasks.push(
-        await prisma.task.create({
-          data: {
-            title: `${pick(ARTIFACT_LABELS)} - ${faker.lorem.words(3)}`,
-            status: pick(taskStatuses),
-            projectId: project.id,
-            estimatedDays: faker.number.float({
-              min: 1,
-              max: 10,
-              fractionDigits: 1,
-            }),
-          },
-        }),
-      );
-    }
-
+    // Tasks created below (1 per sheet row) accumulate here so time
+    // entries have something real to reference.
+    const tasks: { id: string }[] = [];
     // Sheet rows accumulate as we create EMs/consultants below, so the
     // Author LLR / Author LLT columns reference real names on this project.
     const sheetRows: Record<string, string>[] = [];
@@ -183,18 +191,6 @@ async function main() {
         },
       });
 
-      const emEntryCount = faker.number.int({ min: 1, max: 3 });
-      for (let i = 0; i < emEntryCount; i++) {
-        await prisma.timeEntry.create({
-          data: {
-            userId: em.id,
-            taskId: pick(tasks).id,
-            days: faker.number.float({ min: 0.5, max: 5, fractionDigits: 1 }),
-            note: faker.lorem.sentence(),
-          },
-        });
-      }
-
       // 5 consultants under this EM, inheriting the EM's artifact role.
       const consultantsUnderEm = [];
       for (let c = 0; c < CONSULTANTS_PER_EM; c++) {
@@ -225,54 +221,96 @@ async function main() {
             projectName: project.name,
           },
         });
-
-        const entryCount = faker.number.int({ min: 1, max: 3 });
-        for (let i = 0; i < entryCount; i++) {
-          await prisma.timeEntry.create({
-            data: {
-              userId: consultant.id,
-              taskId: pick(tasks).id,
-              days: faker.number.float({
-                min: 0.5,
-                max: 5,
-                fractionDigits: 1,
-              }),
-              note: faker.lorem.sentence(),
-            },
-          });
-        }
       }
 
-      // A few sheet rows per EM, authored by this EM and its consultants —
-      // gives every project's sheet real, traceable names instead of
-      // placeholder text.
-      for (let r = 0; r < 4; r++) {
+      // A few sheet rows per EM, each backed by a real Task row (same
+      // shape actions/sheet.ts's syncSheetRowsToTasks produces), authored
+      // by this EM and its consultants.
+      for (let r = 0; r < ROWS_PER_EM; r++) {
         const rowNum = sheetRows.length + 1;
         const author = pick(consultantsUnderEm);
         const testStatus = pick(["OK", "KO"]);
+        const statusLLT = pick(STATUS_LLT_OPTIONS);
+        const rowId = genRowId();
+        const llrId = `REQ-${faker.string.alpha({ length: 4, casing: "upper" })}-FUNCT-NAME${rowNum}`;
+        const functionName = `Funct-Name${rowNum}`;
+        const complexity = faker.number.int({ min: 1, max: 10 });
+        const fileC = `funct-name${rowNum}.c`;
+        const codeVersion = `v${faker.system.semver()}`;
+        const its = faker.datatype.boolean(0.3)
+          ? `ITS#${faker.number.int({ min: 1000, max: 9999 })}`
+          : "";
+        const iqa = faker.datatype.boolean(0.2)
+          ? `IQA#${faker.number.int({ min: 1000, max: 9999 })}`
+          : "";
+        const estimationDays = faker.number.float({
+          min: 0.5,
+          max: 10,
+          fractionDigits: 1,
+        });
+
         sheetRows.push({
+          [ROW_ID_KEY]: rowId,
           priority: String(faker.number.int({ min: 1, max: 5 })),
-          llrId: `REQ-${faker.string.alpha({ length: 4, casing: "upper" })}-FUNCT-NAME${rowNum}`,
-          functionName: `Funct-Name${rowNum}`,
-          complexity: String(faker.number.int({ min: 1, max: 10 })),
-          fileC: `funct-name${rowNum}.c`,
-          codeVersion: `v${faker.system.semver()}`,
+          llrId,
+          functionName,
+          complexity: String(complexity),
+          fileC,
+          codeVersion,
           authorLLR: em.name,
           authorLLT: author.name,
           testStatus,
-          its: faker.datatype.boolean(0.3)
-            ? `ITS#${faker.number.int({ min: 1000, max: 9999 })}`
-            : "",
-          iqa: faker.datatype.boolean(0.2)
-            ? `IQA#${faker.number.int({ min: 1000, max: 9999 })}`
-            : "",
+          its,
+          iqa,
           commentLLT: testStatus === "KO" ? faker.lorem.sentence() : "",
-          statusLLTDate: pick(STATUS_LLT_OPTIONS),
+          statusLLTDate: statusLLT,
+          estimationDays: String(estimationDays),
+        });
+
+        const task = await prisma.task.create({
+          data: {
+            title: functionName,
+            status: STATUS_LLT_TO_TASK_STATUS[statusLLT],
+            projectId: project.id,
+            estimatedDays: estimationDays,
+            sheetRowId: rowId,
+            functionName,
+            llrId,
+            fileC,
+            codeVersion,
+            complexity,
+            its: its || null,
+            iqa: iqa || null,
+            assigneeLLRId: em.id,
+            assigneeLLTId: author.id,
+          },
+        });
+        tasks.push(task);
+      }
+    }
+
+    // Time entries for EMs/consultants, logged against the real Task rows
+    // created above rather than a separate ad-hoc task list.
+    const allProjectUsers = await prisma.user.findMany({
+      where: { assignments: { some: { projectId: project.id } } },
+      select: { id: true },
+    });
+    for (const user of allProjectUsers) {
+      const entryCount = faker.number.int({ min: 1, max: 3 });
+      for (let i = 0; i < entryCount; i++) {
+        await prisma.timeEntry.create({
+          data: {
+            userId: user.id,
+            taskId: pick(tasks).id,
+            days: faker.number.float({ min: 0.5, max: 5, fractionDigits: 1 }),
+            note: faker.lorem.sentence(),
+          },
         });
       }
     }
 
-    // one Sheet per project, columns matching the grid, rows built above.
+    // one Sheet per project, columns matching the grid, rows built above —
+    // every row carries the same __rowId as its corresponding Task.
     await prisma.sheet.create({
       data: {
         name: `FiAv-${project.name}`,
@@ -285,7 +323,7 @@ async function main() {
 
   console.log(
     `Seeded ${unitManagers.length} unit managers, ${emCounter} engagement managers, ` +
-      `${consultantCounter} consultants across ${NUM_PROJECTS} projects (with a sheet each).`,
+      `${consultantCounter} consultants across ${NUM_PROJECTS} projects (with a sheet + synced tasks each).`,
   );
 }
 

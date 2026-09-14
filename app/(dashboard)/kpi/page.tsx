@@ -1,23 +1,14 @@
-// Remove "use client" - this is now a Server Component!
+import { Suspense } from "react";
 import KpiHeader from "@/components/analytics/header";
-import PipelineDonut from "@/components/analytics/donut";
 import CalendarDemo from "@/components/analytics/calender";
-import ConsultantsTable from "@/components/analytics/table";
 import ProjectStatus from "@/components/analytics/project-status";
 import ProjectProgress from "@/components/analytics/project-progress";
-import TaskDeliveryTrend from "@/components/analytics/task-delivery-trend";
+import TaskDeliveryTrendSection from "@/components/analytics/task-delivery-trend-section";
+import PipelineDonutSection from "@/components/analytics/pipeline-donut-section";
+import TeamSection from "@/components/analytics/team-section";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// Import your new server action
-import { getGlobalPipelineStats } from "@/app/actions/projects"; // Adjust path as needed
-
-export default async function FullAnalyticsDashboard() {
-  // Fetch the data on the server
-  const pipelineData = await getGlobalPipelineStats();
-
-  // Safely extract the data or default to empty
-  const donutStats = pipelineData.success ? pipelineData.stats : [];
-  const donutTotal = pipelineData.success ? pipelineData.total : 0;
-
+export default function FullAnalyticsDashboard() {
   return (
     <div className="h-full min-h-screen overflow-y-auto bg-muted/30">
       <div className="mx-auto max-w-7xl space-y-6 p-6 pb-12 lg:p-8">
@@ -31,8 +22,11 @@ export default async function FullAnalyticsDashboard() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
           <div className="lg:col-span-3">
-            {/* Pass the real data into the donut */}
-            <PipelineDonut data={donutStats} total={donutTotal} />
+            <Suspense
+              fallback={<Skeleton className="h-80 w-full rounded-2xl" />}
+            >
+              <PipelineDonutSection />
+            </Suspense>
           </div>
           <div className="lg:col-span-2">
             <CalendarDemo />
@@ -44,9 +38,15 @@ export default async function FullAnalyticsDashboard() {
           <ProjectProgress />
         </div>
 
-        <TaskDeliveryTrend />
+        <Suspense
+          fallback={<Skeleton className="h-[340px] w-full rounded-2xl" />}
+        >
+          <TaskDeliveryTrendSection />
+        </Suspense>
 
-        <ConsultantsTable />
+        <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
+          <TeamSection />
+        </Suspense>
       </div>
     </div>
   );

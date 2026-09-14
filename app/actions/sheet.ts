@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { projectSheetName } from "@/lib/sheet-naming";
 import { getSession } from "@/lib/auth";
+import type { TaskStatus } from "@/app/generated/prisma/enums";
 
 export type SavedColumn = { id: string; title: string; width?: number };
 export type SavedRow = Record<string, string>;
 export type SheetTab = { id: string; name: string; projectId: string | null };
 
 const SHEETS_PATH = "/sheets";
+const TASKS_PATH = "/tasks";
 
 async function requireCurrentUserId(): Promise<string> {
   const session = await getSession();
@@ -60,6 +62,139 @@ export async function loadSheet(
   };
 }
 
+// ---- Sheet -> Task sync -------------------------------------------------
+//
+// A sheet row is matched to a Task by row.__rowId (a stable id generated
+// client-side in sheet-table.tsx, see ROW_ID_KEY there) rather than
+// functionName — functionName is free-text and can repeat within a
+// single project, which broke upserting by name. Task.sheetRowId is
+// unique per project (see @@unique([projectId, sheetRowId]) in
+// schema.prisma) so this upsert is safe even with duplicate function
+// names. Rows without an id yet (only possible from an older/unsynced
+// client) are skipped rather than guessed at.
+const ROW_ID_KEY = "__rowId";
+
+// Sheet status values (STATUS_LLT_OPTIONS in status-llt-cell.tsx) mapped
+// to the TaskStatus enum. "Out of scop" is a known typo already present
+// in seeded/legacy data — mapped the same as the corrected spelling.
+const SHEET_STATUS_TO_TASK_STATUS: Record<string, TaskStatus> = {
+  "In progress": "IN_PROGRESS",
+  "Ready for dry run": "READY_FOR_DRY_RUN",
+  "Dry run in progress": "DRY_RUN_IN_PROGRESS",
+  "Ready for TC": "READY_FOR_TC",
+  "TC Done": "TC_DONE",
+  "TC Correction": "TC_CORRECTION",
+  "Ready for QC": "READY_FOR_QC",
+  "Ready for Delivery": "READY_FOR_DELIVERY",
+  Delivered: "DELIVERED",
+  "Out of scop": "OUT_OF_SCOPE",
+  "Out of scope": "OUT_OF_SCOPE",
+  Blocked: "BLOCKED",
+};
+
+function parseComplexity(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// estimationDays (sheet-table.tsx) -> Task.estimatedDays. Float, unlike
+// complexity, since estimates are commonly fractional (e.g. "1.5" days).
+function parseEstimatedDays(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function syncSheetRowsToTasks(
+  projectId: string,
+  rows: SavedRow[],
+): Promise<void> {
+  const rowsWithId = rows
+    .map((row) => ({ row, rowId: row[ROW_ID_KEY]?.trim() }))
+    .filter((r): r is { row: SavedRow; rowId: string } => !!r.rowId);
+
+  if (rowsWithId.length === 0) return;
+
+  // Batch-resolve every distinct author name in this sheet in one query,
+  // instead of querying per row per column.
+  const authorNames = new Set<string>();
+  for (const { row } of rowsWithId) {
+    if (row.authorLLR?.trim()) authorNames.add(row.authorLLR.trim());
+    if (row.authorLLT?.trim()) authorNames.add(row.authorLLT.trim());
+  }
+
+  const users = authorNames.size
+    ? await db.user.findMany({
+        where: { name: { in: [...authorNames] } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const userIdByName = new Map<string, string>();
+  for (const u of users) {
+    userIdByName.set(u.name, u.id);
+    userIdByName.set(u.name.toLowerCase(), u.id);
+  }
+  const resolveUserId = (name: string | undefined): string | null => {
+    const trimmed = name?.trim();
+    if (!trimmed) return null;
+    return (
+      userIdByName.get(trimmed) ??
+      userIdByName.get(trimmed.toLowerCase()) ??
+      null
+    );
+  };
+
+  await db.$transaction(
+    rowsWithId.map(({ row, rowId }) => {
+      const functionName = row.functionName?.trim() || null;
+      const status = row.statusLLTDate
+        ? SHEET_STATUS_TO_TASK_STATUS[row.statusLLTDate.trim()]
+        : undefined;
+
+      return db.task.upsert({
+        where: {
+          projectId_sheetRowId: { projectId, sheetRowId: rowId },
+        },
+        update: {
+          functionName,
+          llrId: row.llrId || null,
+          fileC: row.fileC || null,
+          codeVersion: row.codeVersion || null,
+          complexity: parseComplexity(row.complexity),
+          estimatedDays: parseEstimatedDays(row.estimationDays),
+          its: row.its || null,
+          iqa: row.iqa || null,
+          assigneeLLRId: resolveUserId(row.authorLLR),
+          assigneeLLTId: resolveUserId(row.authorLLT),
+          // Only overwrite status if the sheet's value maps to a known
+          // enum member — an unrecognized/free-typed status string
+          // leaves the Task's existing status untouched.
+          ...(status ? { status } : {}),
+        },
+        create: {
+          title: functionName || `Row ${rowId.slice(0, 8)}`,
+          projectId,
+          sheetRowId: rowId,
+          functionName,
+          llrId: row.llrId || null,
+          fileC: row.fileC || null,
+          codeVersion: row.codeVersion || null,
+          complexity: parseComplexity(row.complexity),
+          estimatedDays: parseEstimatedDays(row.estimationDays),
+          its: row.its || null,
+          iqa: row.iqa || null,
+          assigneeLLRId: resolveUserId(row.authorLLR),
+          assigneeLLTId: resolveUserId(row.authorLLT),
+          ...(status ? { status } : {}),
+        },
+      });
+    }),
+  );
+
+  revalidatePath(TASKS_PATH);
+}
+
 export async function saveSheet(
   sheetId: string,
   columns: SavedColumn[],
@@ -67,11 +202,18 @@ export async function saveSheet(
 ): Promise<void> {
   await assertSheetAccess(sheetId);
 
-  await db.sheet.upsert({
+  const sheet = await db.sheet.upsert({
     where: { id: sheetId },
     update: { columns, rows },
     create: { id: sheetId, columns, rows },
+    select: { projectId: true },
   });
+
+  // Only project-linked sheets drive Task rows — a standalone sheet
+  // (projectId: null) has no Project to attach Tasks to.
+  if (sheet.projectId) {
+    await syncSheetRowsToTasks(sheet.projectId, rows);
+  }
 }
 
 // ---- Tab management ----
@@ -235,4 +377,3 @@ export async function renameSheetForProject(
   });
   revalidatePath(SHEETS_PATH);
 }
-// Add this to your server actions file

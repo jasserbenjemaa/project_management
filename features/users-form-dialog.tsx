@@ -375,7 +375,7 @@ export function UserFormDialog({
           <div className="flex flex-col gap-1.5">
             <Label>Projects</Label>
             <Popover>
-              <PopoverTrigger asChild>
+              <PopoverTrigger>
                 <Button
                   variant="outline"
                   role="combobox"
@@ -428,7 +428,7 @@ export function UserFormDialog({
             <div className="flex flex-col gap-1.5">
               <Label>Hire date</Label>
               <Popover>
-                <PopoverTrigger asChild>
+                <PopoverTrigger>
                   <Button
                     variant="outline"
                     className={cn(

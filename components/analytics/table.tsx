@@ -1,14 +1,17 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable } from "@/components/data-table";
+import type { ConsultantRow, ManagerRow, Specialty } from "@/app/actions/stats";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -29,87 +32,11 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 // ---------------------------------------------------------------------------
-// Consultants
+// Consultants — real data (see app/actions/team.ts: getConsultantsOverview)
 // ---------------------------------------------------------------------------
 
-export type Specialty = "HLT" | "LLR" | "LLT" | "Code Review" | "Architecture";
-
-export type Consultant = {
-  id: string;
-  name: string;
-  specialty: Specialty;
-  progression: number; // 0-100
-  projects: string[];
-  kpi: number; // 0-100
-};
-
-export const consultants: Consultant[] = [
-  {
-    id: "1",
-    name: "Sarah Mansour",
-    specialty: "HLT",
-    progression: 82,
-    projects: ["Atlas Migration", "Nova CRM", "Helios Billing"],
-    kpi: 91,
-  },
-  {
-    id: "2",
-    name: "Omar Belkacem",
-    specialty: "LLR",
-    progression: 47,
-    projects: ["Orion Analytics"],
-    kpi: 68,
-  },
-  {
-    id: "3",
-    name: "Nadia Chebbi",
-    specialty: "LLT",
-    progression: 63,
-    projects: ["Zenith Portal", "Comet Mobile"],
-    kpi: 74,
-  },
-  {
-    id: "4",
-    name: "Yassine Trabelsi",
-    specialty: "Code Review",
-    progression: 95,
-    projects: ["Atlas Migration", "Vertex API", "Nova CRM", "Pulse Dashboard"],
-    kpi: 88,
-  },
-  {
-    id: "5",
-    name: "Lina Feki",
-    specialty: "Architecture",
-    progression: 58,
-    projects: ["Vertex API"],
-    kpi: 55,
-  },
-  {
-    id: "6",
-    name: "Karim Hadded",
-    specialty: "HLT",
-    progression: 30,
-    projects: ["Comet Mobile"],
-    kpi: 40,
-  },
-  {
-    id: "7",
-    name: "Amira Sassi",
-    specialty: "Code Review",
-    progression: 71,
-    projects: ["Pulse Dashboard", "Helios Billing"],
-    kpi: 79,
-  },
-];
+export type Consultant = ConsultantRow;
 
 const specialtyStyles: Record<Specialty, string> = {
   HLT: "bg-blue-100 text-blue-700 hover:bg-blue-100",
@@ -155,6 +82,7 @@ const consultantColumns: ColumnDef<Consultant>[] = [
     },
   },
   {
+    // % of this consultant's LLR-assigned tasks that are DELIVERED.
     accessorKey: "progression",
     header: ({ column }) => (
       <Button
@@ -170,7 +98,11 @@ const consultantColumns: ColumnDef<Consultant>[] = [
       const value = row.getValue<number>("progression");
       return (
         <div className="flex w-40 items-center gap-2">
-          <Progress value={value} className="h-2" />
+          <Progress
+            value={value}
+            className="h-2"
+            aria-valuetext={`${value}%`}
+          />
           <span className="w-9 text-right text-sm text-muted-foreground">
             {value}%
           </span>
@@ -183,6 +115,9 @@ const consultantColumns: ColumnDef<Consultant>[] = [
     header: "Projects",
     cell: ({ row }) => {
       const projects = row.getValue<string[]>("projects");
+      if (projects.length === 0) {
+        return <span className="text-xs text-muted-foreground">—</span>;
+      }
       return (
         <div className="flex max-w-xs flex-wrap gap-1.5">
           {projects.map((project) => (
@@ -199,6 +134,11 @@ const consultantColumns: ColumnDef<Consultant>[] = [
     },
   },
   {
+    // LLR KPI (see actions/kpi.ts: getUserKpiForRole(id, "LLR").kpi).
+    // NOTE: unlike progression, this is not a bounded 0-100 percentage —
+    // it's a complexity-weighted score, so the color thresholds below
+    // are a rough heuristic, not calibrated cutoffs. Tune kpiColor (or
+    // normalize the score in getConsultantsOverview) if that's misleading.
     accessorKey: "kpi",
     header: ({ column }) => (
       <Button
@@ -206,7 +146,7 @@ const consultantColumns: ColumnDef<Consultant>[] = [
         className="-ml-3"
         onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
       >
-        KPI
+        KPI (LLR)
         <ArrowUpDown className="ml-2 h-3.5 w-3.5" />
       </Button>
     ),
@@ -222,91 +162,12 @@ const consultantColumns: ColumnDef<Consultant>[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Engagement managers
+// Engagement managers — real data (see app/actions/team.ts:
+// getEngagementManagersOverview). No manager-KPI formula is defined yet,
+// so this table only shows progression / completion rate / projects.
 // ---------------------------------------------------------------------------
 
-export type Region = "North America" | "EMEA" | "APAC" | "LATAM";
-
-export type EngagementManager = {
-  id: string;
-  name: string;
-  region: Region;
-  progression: number; // 0-100 — "% Progression"
-  completionRate: number; // 0-100 — "Completion Rate" (taux d'avancement)
-  deliveryDate: string; // ISO date — "Delivery Date" (date de livraison)
-  engagements: string[]; // accounts they oversee
-  kpi: number; // 0-100, client satisfaction score
-};
-
-export const engagementManagers: EngagementManager[] = [
-  {
-    id: "1",
-    name: "Farah Ben Youssef",
-    region: "EMEA",
-    progression: 88,
-    completionRate: 76,
-    deliveryDate: "2026-10-15",
-    engagements: ["Atlas Migration", "Zenith Portal"],
-    kpi: 93,
-  },
-  {
-    id: "2",
-    name: "Marcus Reyes",
-    region: "North America",
-    progression: 74,
-    completionRate: 62,
-    deliveryDate: "2026-11-01",
-    engagements: ["Nova CRM", "Pulse Dashboard"],
-    kpi: 81,
-  },
-  {
-    id: "3",
-    name: "Priya Nair",
-    region: "APAC",
-    progression: 66,
-    completionRate: 55,
-    deliveryDate: "2026-12-05",
-    engagements: ["Orion Analytics"],
-    kpi: 72,
-  },
-  {
-    id: "4",
-    name: "Diego Alvarez",
-    region: "LATAM",
-    progression: 53,
-    completionRate: 40,
-    deliveryDate: "2027-01-20",
-    engagements: ["Comet Mobile", "Vertex API"],
-    kpi: 61,
-  },
-  {
-    id: "5",
-    name: "Sophie Laurent",
-    region: "EMEA",
-    progression: 95,
-    completionRate: 90,
-    deliveryDate: "2026-09-30",
-    engagements: ["Helios Billing", "Atlas Migration", "Nova CRM"],
-    kpi: 90,
-  },
-  {
-    id: "6",
-    name: "James Whitfield",
-    region: "North America",
-    progression: 41,
-    completionRate: 28,
-    deliveryDate: "2027-02-10",
-    engagements: ["Pulse Dashboard"],
-    kpi: 48,
-  },
-];
-
-const regionStyles: Record<Region, string> = {
-  "North America": "bg-blue-100 text-blue-700 hover:bg-blue-100",
-  EMEA: "bg-purple-100 text-purple-700 hover:bg-purple-100",
-  APAC: "bg-teal-100 text-teal-700 hover:bg-teal-100",
-  LATAM: "bg-amber-100 text-amber-700 hover:bg-amber-100",
-};
+export type EngagementManager = ManagerRow;
 
 const managerColumns: ColumnDef<EngagementManager>[] = [
   {
@@ -330,21 +191,15 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
               {initials(manager.name)}
             </AvatarFallback>
           </Avatar>
-          <div className="flex flex-col">
-            <span className="font-medium">{manager.name}</span>
-            <Badge
-              variant="secondary"
-              className={`w-fit text-xs font-normal ${regionStyles[manager.region]}`}
-            >
-              {manager.region}
-            </Badge>
-          </div>
+          <span className="font-medium">{manager.name}</span>
         </div>
       );
     },
   },
   {
-    // "% Progression" (%progression)
+    // % of ALL tasks across every project this manager is on that are
+    // DELIVERED — not scoped to tasks personally assigned to them, since
+    // a manager owns the project's delivery as a whole.
     accessorKey: "progression",
     header: ({ column }) => (
       <Button
@@ -352,7 +207,7 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
         className="-ml-3"
         onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
       >
-        % Progression
+        Progression
         <ArrowUpDown className="ml-2 h-3.5 w-3.5" />
       </Button>
     ),
@@ -360,7 +215,11 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
       const value = row.getValue<number>("progression");
       return (
         <div className="flex w-40 items-center gap-2">
-          <Progress value={value} className="h-2" />
+          <Progress
+            value={value}
+            className="h-2"
+            aria-valuetext={`${value}%`}
+          />
           <span className="w-9 text-right text-sm text-muted-foreground">
             {value}%
           </span>
@@ -369,7 +228,7 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
     },
   },
   {
-    // "Completion Rate" (taux d'avancement)
+    // % of their assigned projects with status COMPLETED.
     accessorKey: "completionRate",
     header: ({ column }) => (
       <Button
@@ -385,7 +244,11 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
       const value = row.getValue<number>("completionRate");
       return (
         <div className="flex w-40 items-center gap-2">
-          <Progress value={value} className="h-2" />
+          <Progress
+            value={value}
+            className="h-2"
+            aria-valuetext={`${value}%`}
+          />
           <span className="w-9 text-right text-sm text-muted-foreground">
             {value}%
           </span>
@@ -394,41 +257,22 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
     },
   },
   {
-    // "Delivery Date" (date de livraison)
-    accessorKey: "deliveryDate",
-    header: ({ column }) => (
-      <Button
-        variant="ghost"
-        className="-ml-3"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Delivery Date
-        <ArrowUpDown className="ml-2 h-3.5 w-3.5" />
-      </Button>
-    ),
-    cell: ({ row }) => {
-      const value = row.getValue<string>("deliveryDate");
-      return (
-        <span className="text-sm text-muted-foreground">
-          {formatDate(value)}
-        </span>
-      );
-    },
-  },
-  {
-    accessorKey: "engagements",
+    accessorKey: "projects",
     header: "Projects",
     cell: ({ row }) => {
-      const engagements = row.getValue<string[]>("engagements");
+      const projects = row.getValue<string[]>("projects");
+      if (projects.length === 0) {
+        return <span className="text-xs text-muted-foreground">—</span>;
+      }
       return (
         <div className="flex max-w-xs flex-wrap gap-1.5">
-          {engagements.map((engagement) => (
+          {projects.map((project) => (
             <Badge
-              key={engagement}
+              key={project}
               variant="outline"
               className="text-xs font-normal"
             >
-              {engagement}
+              {project}
             </Badge>
           ))}
         </div>
@@ -441,7 +285,32 @@ const managerColumns: ColumnDef<EngagementManager>[] = [
 // Table wrapper with tabs
 // ---------------------------------------------------------------------------
 
-export default function TeamTable() {
+export default function TeamTable({
+  consultants = [],
+  managers = [],
+}: {
+  // Fetch both with the functions in app/actions/team.ts in the parent
+  // server component and pass the results down — this component stays
+  // client-side (needed for the search inputs' state) and does no data
+  // fetching itself.
+  consultants?: Consultant[];
+  managers?: EngagementManager[];
+}) {
+  const [consultantSearch, setConsultantSearch] = useState("");
+  const [managerSearch, setManagerSearch] = useState("");
+
+  const filteredConsultants = useMemo(() => {
+    const q = consultantSearch.trim().toLowerCase();
+    if (!q) return consultants;
+    return consultants.filter((c) => c.name.toLowerCase().includes(q));
+  }, [consultants, consultantSearch]);
+
+  const filteredManagers = useMemo(() => {
+    const q = managerSearch.trim().toLowerCase();
+    if (!q) return managers;
+    return managers.filter((m) => m.name.toLowerCase().includes(q));
+  }, [managers, managerSearch]);
+
   return (
     <Card className="rounded-2xl border-border/60 shadow-sm">
       <CardHeader className="pb-2">
@@ -457,17 +326,35 @@ export default function TeamTable() {
             <TabsTrigger value="consultants">Consultants</TabsTrigger>
           </TabsList>
           <TabsContent value="managers">
+            <div className="relative mb-3 max-w-xs">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={managerSearch}
+                onChange={(e) => setManagerSearch(e.target.value)}
+                placeholder="Search managers..."
+                className="pl-8"
+              />
+            </div>
             <DataTable
               columns={managerColumns}
-              data={engagementManagers}
+              data={filteredManagers}
               pageSize={7}
               initialSorting={[{ id: "progression", desc: true }]}
             />
           </TabsContent>
           <TabsContent value="consultants">
+            <div className="relative mb-3 max-w-xs">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={consultantSearch}
+                onChange={(e) => setConsultantSearch(e.target.value)}
+                placeholder="Search consultants..."
+                className="pl-8"
+              />
+            </div>
             <DataTable
               columns={consultantColumns}
-              data={consultants}
+              data={filteredConsultants}
               pageSize={7}
               initialSorting={[{ id: "kpi", desc: true }]}
             />

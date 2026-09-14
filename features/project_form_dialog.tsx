@@ -138,7 +138,7 @@ export const ProjectFormDialog = ({
           <div className="flex flex-col gap-2">
             <Label>Delivery date</Label>
             <Popover>
-              <PopoverTrigger asChild>
+              <PopoverTrigger>
                 <Button
                   variant="outline"
                   className={cn(

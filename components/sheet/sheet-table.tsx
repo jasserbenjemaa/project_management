@@ -423,6 +423,7 @@ const initialColumns: GridColumn[] = [
   { title: "IQA", id: "iqa", width: 150 },
   { title: "Comment LLT", id: "commentLLT", width: 200 },
   { title: "Status LLT (JJ/MM/AAAA)", id: "statusLLTDate", width: 180 },
+  { title: "Estimation (days)", id: "estimationDays", width: 140 },
 ];
 
 const seedData: RowData[] = [
@@ -440,6 +441,7 @@ const seedData: RowData[] = [
     iqa: "",
     commentLLT: "",
     statusLLTDate: "26/07/2026",
+    estimationDays: "2",
   },
   {
     priority: "2",
@@ -455,6 +457,7 @@ const seedData: RowData[] = [
     iqa: "Open",
     commentLLT: "Boundary case not covered, re-test after fix.",
     statusLLTDate: "25/07/2026",
+    estimationDays: "1.5",
   },
 ];
 
@@ -471,8 +474,28 @@ const emptySelection: GridSelection = {
 // insert above/below.
 const STARTER_BLANK_ROWS = 20;
 
+// --- Stable per-row id ---
+// Sheet rows are plain Record<string,string> blobs with no DB-level
+// primary key of their own. functionName looked like a natural key but
+// isn't safe: it's freely editable and can repeat within a single
+// project (copy-pasted rows, duplicate entries), which broke the
+// Task-sync upsert. __rowId is generated once, travels with the row
+// through edits/saves like any other field, and is what Task.sheetRowId
+// links against on the server (see actions/sheet.ts).
+const genRowId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `row_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+
+const ROW_ID_KEY = "__rowId";
+
+// Backfills an id onto rows loaded from the DB before this feature
+// existed, without disturbing rows that already have one.
+const ensureRowId = (row: RowData): RowData =>
+  row[ROW_ID_KEY] ? row : { ...row, [ROW_ID_KEY]: genRowId() };
+
 const createEmptyRow = (cols: GridColumn[]): RowData => {
-  const row: RowData = {};
+  const row: RowData = { [ROW_ID_KEY]: genRowId() };
   cols.forEach((c) => {
     if (c.id) row[c.id] = "";
   });
@@ -548,7 +571,7 @@ export type { RowData };
 const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
   const [columns, setColumns] = useState<GridColumn[]>(initialColumns);
   const [data, setData] = useState<RowData[]>(() => [
-    ...initialRows,
+    ...initialRows.map(ensureRowId),
     ...Array.from({ length: STARTER_BLANK_ROWS }, () =>
       createEmptyRow(initialColumns),
     ),

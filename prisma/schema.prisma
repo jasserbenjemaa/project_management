@@ -24,6 +24,8 @@ model User {
   reports         User[]       @relation("ReportsTo")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  tasksAsLLRAuthor Task[] @relation("TaskLLRAuthor")
+  tasksAsLLTAuthor Task[] @relation("TaskLLTAuthor")
 }
 model Sheet {
   id        String   @id @default(cuid())
@@ -50,13 +52,32 @@ model Project {
 model Task {
   id            String      @id @default(uuid())
   title         String
-  status        TaskStatus  @default(TODO)
+  status        TaskStatus  @default(IN_PROGRESS)
   projectId     String
   estimatedDays Float?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   timeEntries   TimeEntry[]
+
+  // Stable link to the sheet row this Task was synced from (row.__rowId,
+  // see sheet-table.tsx). functionName can repeat within a project (or be
+  // edited later), so it's no longer the key — just kept for display.
+  sheetRowId    String?
+  functionName  String?
+  llrId         String?
+  fileC         String?
+  codeVersion   String?
+  complexity    Int?
+  its           String?
+  iqa           String?
+
+  assigneeLLRId String?
+  assigneeLLR   User?       @relation("TaskLLRAuthor", fields: [assigneeLLRId], references: [id], onDelete: SetNull)
+  assigneeLLTId String?
+  assigneeLLT   User?       @relation("TaskLLTAuthor", fields: [assigneeLLTId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, sheetRowId])
 }
 
 model TimeEntry {
@@ -108,12 +129,7 @@ enum ProjectStatus {
   COMPLETED
 }
 
-enum TaskStatus {
-  BLOCKED
-  TODO
-  IN_PROGRESS
-  DONE
-}
+
 
 enum Artifact {
   HLT
@@ -129,3 +145,17 @@ enum Level {
   SENIOR
   EXPERT
 }
+enum TaskStatus {
+  IN_PROGRESS
+  READY_FOR_DRY_RUN
+  DRY_RUN_IN_PROGRESS
+  READY_FOR_TC
+  TC_DONE
+  TC_CORRECTION
+  READY_FOR_QC
+  READY_FOR_DELIVERY
+  DELIVERED
+  OUT_OF_SCOPE
+  BLOCKED
+}
+
