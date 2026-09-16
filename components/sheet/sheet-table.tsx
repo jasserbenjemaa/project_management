@@ -730,6 +730,19 @@ const SheetTable = ({
   }, []);
 
   // --- Load saved data on mount ---
+  // NOTE: `defaultColumns` is deliberately NOT a dependency of the effect
+  // below. It arrives as a prop from a server component, so the RSC
+  // payload hands us a brand-new array identity on every server render
+  // (any router.refresh(), any revalidatePath()). Depending on it made
+  // this effect re-run mid-typing, and `setData(saved.rows)` then wiped
+  // whatever hadn't been autosaved yet — the character you just typed
+  // vanished and only came back once the debounced save caught up.
+  // The Progress sheet never hit this because it doesn't pass the prop
+  // (it falls back to the module-local `initialColumns`, stable identity),
+  // which is why only ITS and IQA showed the bug.
+  const defaultColumnsRef = useRef(defaultColumns);
+  defaultColumnsRef.current = defaultColumns;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -746,7 +759,7 @@ const SheetTable = ({
                   id: c.id,
                   width: c.width ?? 120,
                 }))
-              : defaultColumns;
+              : defaultColumnsRef.current;
 
           setColumns(loadedColumns);
           // Saved rows now already include whatever blank rows were on the
@@ -767,7 +780,7 @@ const SheetTable = ({
     return () => {
       cancelled = true;
     };
-  }, [sheetId, defaultColumns]);
+  }, [sheetId]);
 
   // --- Read a cell ---
   const getCellContent = useCallback(
@@ -1597,10 +1610,14 @@ const SheetTable = ({
   useEffect(() => {
     if (!isLoaded) return; // don't save while the initial buffer is still in place
 
-    setSaveStatus("saving");
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
+    // "saving" is flipped inside the timeout, not here. Setting it on
+    // every keystroke re-rendered this whole (canvas-heavy) component
+    // once per character for no visible benefit — the status only needs
+    // to change when a write is actually in flight.
     saveTimeoutRef.current = setTimeout(async () => {
+      setSaveStatus("saving");
       try {
         await saveSheet(
           sheetId,
