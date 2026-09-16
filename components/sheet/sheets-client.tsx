@@ -3,8 +3,13 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createSheet, renameSheet, deleteSheet } from "@/app/actions/sheet";
+import {
+  createSheet as createProgressSheet,
+  renameSheet as renameProgressSheet,
+  deleteSheet as deleteProgressSheet,
+} from "@/app/actions/sheet";
 import type { RowData } from "@/components/sheet/sheet-table";
+import type { GridColumn } from "@glideapps/glide-data-grid";
 
 const SheetTable = dynamic(() => import("@/components/sheet/sheet-table"), {
   ssr: false,
@@ -21,10 +26,36 @@ export default function SheetsClient({
   tabs,
   sheetId,
   initialRows,
+  defaultColumns,
+  newTabNamePrefix = "Sheet",
+  createSheetAction = createProgressSheet,
+  renameSheetAction = renameProgressSheet,
+  deleteSheetAction = deleteProgressSheet,
+  basePath = "/sheets",
 }: {
   tabs: SheetTab[];
   sheetId: string;
   initialRows: RowData[];
+  // Columns a brand-new tab (and the underlying SheetTable) should start
+  // from. Defaults to the Progress Sheet's built-in columns — pass
+  // ITS_DEFAULT_COLUMNS from the ITS page instead.
+  defaultColumns?: GridColumn[];
+  // Prefix used when naming a tab created via the "+" button, e.g.
+  // "Sheet 3" vs "ITS 3".
+  newTabNamePrefix?: string;
+  // Tab-management server actions. Defaults to the Progress Sheet's
+  // actions (app/actions/sheet.ts). An ITS page should pass its own
+  // kind-scoped equivalents so ITS tabs and Progress tabs never mix.
+  createSheetAction?: typeof createProgressSheet;
+  renameSheetAction?: typeof renameProgressSheet;
+  deleteSheetAction?: typeof deleteProgressSheet;
+  // Route this tab bar's own page lives at. Every tab click, new-tab,
+  // and delete-tab navigation goes through this, not a hardcoded
+  // "/sheets" — otherwise clicking a tab on the ITS page would navigate
+  // to /sheets?id=<its-sheet-id>, which the Progress page doesn't
+  // recognize (it's not in its own kind-scoped tab list) and silently
+  // falls back to its own first tab instead.
+  basePath?: string;
 }) {
   const router = useRouter();
 
@@ -116,15 +147,17 @@ export default function SheetsClient({
   }, [moreMenuOpen]);
 
   const handleAddTab = async () => {
-    const created = await createSheet(`Sheet ${localTabs.length + 1}`);
+    const created = await createSheetAction(
+      `${newTabNamePrefix} ${localTabs.length + 1}`,
+    );
     // Optimistic: show the new tab immediately instead of waiting for the
     // navigation + server round trip to resolve.
     setLocalTabs((prev) => [...prev, created]);
-    router.push(`/sheets?id=${created.id}`);
+    router.push(`${basePath}?id=${created.id}`);
   };
 
   const handleSelectTab = (id: string) => {
-    if (id !== sheetId) router.push(`/sheets?id=${id}`);
+    if (id !== sheetId) router.push(`${basePath}?id=${id}`);
   };
 
   const selectFromMoreMenu = (id: string) => {
@@ -145,7 +178,7 @@ export default function SheetsClient({
     setEditingId(null);
     if (!name) return;
     setLocalTabs((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
-    await renameSheet(id, name);
+    await renameSheetAction(id, name);
     router.refresh();
   };
 
@@ -159,7 +192,7 @@ export default function SheetsClient({
 
     if (!window.confirm("Delete this sheet? This cannot be undone.")) return;
 
-    await deleteSheet(tab.id);
+    await deleteSheetAction(tab.id);
     const remaining = localTabs.filter((t) => t.id !== tab.id);
 
     if (remaining.length === 0) {
@@ -168,12 +201,12 @@ export default function SheetsClient({
       // do it races and produces two empty sheets (client creates one,
       // then the server render sees a still-stale empty list and creates
       // a second). Just hand off to the server and let it decide.
-      router.replace(`/sheets`);
+      router.replace(`${basePath}`);
       return;
     }
 
     if (tab.id === sheetId) {
-      router.replace(`/sheets?id=${remaining[0].id}`);
+      router.replace(`${basePath}?id=${remaining[0].id}`);
     } else {
       setLocalTabs(remaining);
       router.refresh();
@@ -188,6 +221,7 @@ export default function SheetsClient({
           sheetId={sheetId}
           projectId={activeProjectId}
           initialRows={initialRows}
+          defaultColumns={defaultColumns}
         />
       </div>
 

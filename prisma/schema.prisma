@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client"
   output   = "../app/generated/prisma"
@@ -28,14 +29,22 @@ model User {
   tasksAsLLTAuthor Task[] @relation("TaskLLTAuthor")
 }
 model Sheet {
-  id        String   @id @default(cuid())
-  name      String   @default("Untitled Sheet")
+  id        String    @id @default(cuid())
+  name      String    @default("Untitled Sheet")
+  kind      SheetKind @default(PROGRESS)
   columns   Json
   rows      Json
-  projectId String?  @unique
-  project   Project? @relation(fields: [projectId], references: [id],onDelete: SetNull)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  projectId String?
+  project   Project?  @relation(fields: [projectId], references: [id],onDelete: SetNull)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // A project can have at most one sheet of each kind — one Progress
+  // sheet, one ITS sheet, one IQA sheet — not one sheet total.
+  // (projectId alone is no longer @unique; NULL projectId rows, i.e.
+  // manually-created sheets, are unaffected since Postgres never treats
+  // NULLs as colliding in a unique index.)
+  @@unique([projectId, kind])
 }
 model Project {
   id           String        @id @default(uuid())
@@ -46,7 +55,9 @@ model Project {
   updatedAt    DateTime      @updatedAt
   assignments  Assignment[]
   tasks        Task[]
-  sheet        Sheet?
+  // One Progress sheet + one ITS sheet + one IQA sheet per project,
+  // enforced by Sheet's @@unique([projectId, kind]) — not a plain 1:1.
+  sheets       Sheet[]
 }
 
 model Task {
@@ -158,4 +169,11 @@ enum TaskStatus {
   OUT_OF_SCOPE
   BLOCKED
 }
+
+enum SheetKind {
+  PROGRESS
+  ITS
+  IQA
+}
+
 

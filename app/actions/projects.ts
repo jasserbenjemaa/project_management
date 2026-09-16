@@ -3,11 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import type { ProjectStatus } from "@/features/projects-columns";
-import { createSheetForProject, renameSheetForProject } from "./sheet";
+import { createSheetsForProject, renameSheetForProject } from "./sheet";
 
 // Update this if the projects table lives at a different route.
 const PROJECTS_PATH = "/projects";
 const SHEETS_PATH = "/sheets";
+const ITS_PATH = "/its";
+const IQA_PATH = "/iqa";
 
 // LIST (lightweight - for populating selects/dropdowns, e.g. the Project
 // field in the user form dialog). Returns just id/name, sorted by name.
@@ -123,17 +125,26 @@ export async function getActiveProjectProgress(): Promise<
       select: {
         id: true,
         name: true,
-        sheet: { select: { rows: true } },
+        // A project now has three sheets (Progress + ITS + IQA); this
+        // widget only cares about delivery progress, which lives on the
+        // Progress one.
+        sheets: {
+          where: { kind: "PROGRESS" },
+          take: 1,
+          select: { rows: true },
+        },
       },
     });
 
     const withProgress = projects
       .filter(
         (p) =>
-          p.sheet && Array.isArray(p.sheet.rows) && p.sheet.rows.length > 0,
+          p.sheets[0] &&
+          Array.isArray(p.sheets[0].rows) &&
+          p.sheets[0].rows.length > 0,
       )
       .map((p) => {
-        const rows = p.sheet!.rows as Record<string, string>[];
+        const rows = p.sheets[0].rows as Record<string, string>[];
         const delivered = rows.filter(
           (r) => r[DELIVERY_STATUS_COLUMN_ID] === DELIVERED_VALUE,
         ).length;
@@ -297,17 +308,22 @@ export async function createProject(input: {
       },
     });
 
-    // Every project gets exactly one sheet, named "FiAv-{project name}".
-    // If this fails, the project still exists but has no sheet yet —
-    // surface it rather than silently swallowing it.
+    // Every project gets exactly one sheet of each kind: a Progress
+    // sheet ("FiAv-{project name}"), an ITS sheet
+    // ("FiAv-{project name} — ITS"), and an IQA sheet
+    // ("FiAv-{project name} — IQA"). If this fails, the project still
+    // exists but is missing a sheet — surface it rather than silently
+    // swallowing it.
     try {
-      await createSheetForProject(project.id, project.name);
+      await createSheetsForProject(project.id, project.name);
     } catch (sheetError) {
       console.error("Project created but sheet creation failed", sheetError);
     }
 
     revalidatePath(PROJECTS_PATH);
     revalidatePath(SHEETS_PATH);
+    revalidatePath(ITS_PATH);
+    revalidatePath(IQA_PATH);
     return { success: true, project: project } as const;
   } catch (error) {
     console.error("Failed to create project", error);
@@ -335,11 +351,14 @@ export async function updateProject(
       },
     });
 
-    // Keep the sheet tab name ("FiAv-{name}") in sync with the project.
+    // Keep all three sheet tabs ("FiAv-{name}", "FiAv-{name} — ITS", and
+    // "FiAv-{name} — IQA") in sync with the project.
     await renameSheetForProject(id, project.name);
 
     revalidatePath(PROJECTS_PATH);
     revalidatePath(SHEETS_PATH);
+    revalidatePath(ITS_PATH);
+    revalidatePath(IQA_PATH);
     return { success: true, project: project } as const;
   } catch (error) {
     console.error("Failed to update project", error);
@@ -350,11 +369,14 @@ export async function updateProject(
 export async function deleteProject(id: string) {
   try {
     // Sheet.projectId is a nullable FK with onDelete: SetNull, so this
-    // detaches (does not delete) the project's sheet. The sheet becomes
-    // deletable afterwards via deleteSheet() in app/actions/sheet.ts.
+    // detaches (does not delete) all three of the project's sheets —
+    // Progress, ITS, and IQA. Each becomes deletable afterwards via
+    // deleteSheet() in app/actions/sheet.ts.
     await db.project.delete({ where: { id } });
     revalidatePath(PROJECTS_PATH);
     revalidatePath(SHEETS_PATH);
+    revalidatePath(ITS_PATH);
+    revalidatePath(IQA_PATH);
     return { success: true } as const;
   } catch (error) {
     console.error("Failed to delete project", error);
@@ -372,8 +394,14 @@ export async function getGlobalPipelineStats(): Promise<
   | { success: false; error: string }
 > {
   try {
-    // Fetch all sheets for the global KPI view
+    // Fetch all Progress sheets for the global KPI view. Scoped by kind
+    // now that ITS and IQA sheets (app/actions/its-sheet.ts,
+    // app/actions/iqa-sheet.ts) live in this same table — their rows use
+    // different column ids ("itsStatus"/"iqaStatus", not
+    // "statusLLTDate") so they'd have been skipped below anyway, but
+    // filtering explicitly is clearer than relying on that.
     const sheets = await db.sheet.findMany({
+      where: { kind: "PROGRESS" },
       select: { rows: true },
     });
 

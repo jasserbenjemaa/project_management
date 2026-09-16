@@ -14,6 +14,8 @@ import {
   PanelLeftOpen,
   TableProperties,
   PanelRightOpen,
+  Bug,
+  ClipboardCheck,
 } from "lucide-react";
 
 import {
@@ -92,6 +94,18 @@ const navGroups: {
         linkTo: "/sheets",
         icon: TableProperties,
         name: "Progress Table",
+        allowedRoles: ["UNIT_MANAGER", "ENGAGEMENT_MANAGER", "CONSULTANT"],
+      },
+      {
+        linkTo: "/its",
+        icon: Bug,
+        name: "ITS",
+        allowedRoles: ["UNIT_MANAGER", "ENGAGEMENT_MANAGER", "CONSULTANT"],
+      },
+      {
+        linkTo: "/iqa",
+        icon: ClipboardCheck,
+        name: "IQA",
         allowedRoles: ["UNIT_MANAGER", "ENGAGEMENT_MANAGER", "CONSULTANT"],
       },
       {

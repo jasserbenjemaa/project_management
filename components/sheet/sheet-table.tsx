@@ -33,6 +33,36 @@ import {
   type FormatCheckedCell,
   type FormatCheckedCellProps,
 } from "./format-checked-cell";
+import {
+  PRIORITY_COL_ID,
+  priorityCellRenderer,
+  type PriorityCell,
+  type PriorityCellProps,
+} from "./priority-cell";
+import {
+  ITS_STATUS_COL_ID,
+  itsStatusCellRenderer,
+  type ItsStatusCell,
+  type ItsStatusCellProps,
+} from "./its-status-cell";
+import {
+  LEVEL_COL_ID,
+  levelCellRenderer,
+  type LevelCell,
+  type LevelCellProps,
+} from "./level-cell";
+import {
+  ORIGIN_COL_ID,
+  originCellRenderer,
+  type OriginCell,
+  type OriginCellProps,
+} from "./origin-cell";
+import {
+  IQA_STATUS_COL_ID,
+  iqaStatusCellRenderer,
+  type IqaStatusCell,
+  type IqaStatusCellProps,
+} from "./iqa-status-cell";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 // ---- Types ----
 type RowData = Record<string, string>;
@@ -199,9 +229,19 @@ const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
   }),
 };
 
+// Column id -> artifact_type to filter suggestions by. Drives the
+// author-suggest cell generically wherever colId shows up in this map
+// (see getCellContent/onCellEdited/authorSuggestionsByCol below) — so
+// adding a new entry is enough to wire up a new autosuggest column,
+// no other branching needed. authorLLR/authorLLT are the Progress
+// sheet's columns; itsAuthorLLR/itsAuthorLLT are the ITS sheet's LLR/LLT
+// columns (see its-columns.ts) — deliberately distinct ids so the two
+// sheets' author columns never share suggestion state.
 const AUTHOR_COL_ARTIFACT_TYPE: Record<string, string> = {
   authorLLR: "LLR",
   authorLLT: "LLT",
+  itsAuthorLLR: "LLR",
+  itsAuthorLLT: "LLT",
 };
 
 interface AuthorSuggestCellProps {
@@ -565,15 +605,26 @@ interface SheetTableProps {
   // getUserSuggestions effect below.
   projectId: string | null;
   initialRows: RowData[];
+  // Columns to seed a brand-new (never-saved) sheet with, and what a
+  // saved-but-empty sheet falls back to (see the loadSheet effect below).
+  // Defaults to the Progress Sheet's columns so existing callers don't
+  // need to change. Pass ITS_DEFAULT_COLUMNS (its-columns.ts) from the
+  // ITS page instead.
+  defaultColumns?: GridColumn[];
 }
 export type { RowData };
 
-const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
-  const [columns, setColumns] = useState<GridColumn[]>(initialColumns);
+const SheetTable = ({
+  sheetId,
+  projectId,
+  initialRows,
+  defaultColumns = initialColumns,
+}: SheetTableProps) => {
+  const [columns, setColumns] = useState<GridColumn[]>(defaultColumns);
   const [data, setData] = useState<RowData[]>(() => [
     ...initialRows.map(ensureRowId),
     ...Array.from({ length: STARTER_BLANK_ROWS }, () =>
-      createEmptyRow(initialColumns),
+      createEmptyRow(defaultColumns),
     ),
   ]);
   const [selection, setSelection] = useState<GridSelection>(emptySelection);
@@ -695,7 +746,7 @@ const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
                   id: c.id,
                   width: c.width ?? 120,
                 }))
-              : initialColumns;
+              : defaultColumns;
 
           setColumns(loadedColumns);
           // Saved rows now already include whatever blank rows were on the
@@ -716,7 +767,7 @@ const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
     return () => {
       cancelled = true;
     };
-  }, [sheetId]);
+  }, [sheetId, defaultColumns]);
 
   // --- Read a cell ---
   const getCellContent = useCallback(
@@ -784,6 +835,71 @@ const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
           },
         };
         return statusCell;
+      }
+
+      if (colId === PRIORITY_COL_ID) {
+        const priorityCell: PriorityCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "priority-cell",
+            value: value as PriorityCellProps["value"],
+          },
+        };
+        return priorityCell;
+      }
+
+      if (colId === ITS_STATUS_COL_ID) {
+        const itsStatusCell: ItsStatusCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "its-status-cell",
+            value: value as ItsStatusCellProps["value"],
+          },
+        };
+        return itsStatusCell;
+      }
+
+      if (colId === LEVEL_COL_ID) {
+        const levelCell: LevelCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "level-cell",
+            value: value as LevelCellProps["value"],
+          },
+        };
+        return levelCell;
+      }
+
+      if (colId === ORIGIN_COL_ID) {
+        const originCell: OriginCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "origin-cell",
+            value: value as OriginCellProps["value"],
+          },
+        };
+        return originCell;
+      }
+
+      if (colId === IQA_STATUS_COL_ID) {
+        const iqaStatusCell: IqaStatusCell = {
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: value,
+          data: {
+            kind: "iqa-status-cell",
+            value: value as IqaStatusCellProps["value"],
+          },
+        };
+        return iqaStatusCell;
       }
 
       // Highlight IQA / Comment LLT cells red-tinted when this row's
@@ -867,6 +983,62 @@ const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
         setData((prev) => {
           const next = [...prev];
           next[row] = { ...next[row], [colId]: newText };
+          return next;
+        });
+        return;
+      }
+
+      if (colId === PRIORITY_COL_ID && newValue.kind === GridCellKind.Custom) {
+        const newPriority = (newValue.data as PriorityCellProps).value;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newPriority };
+          return next;
+        });
+        return;
+      }
+
+      if (
+        colId === ITS_STATUS_COL_ID &&
+        newValue.kind === GridCellKind.Custom
+      ) {
+        const newItsStatus = (newValue.data as ItsStatusCellProps).value;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newItsStatus };
+          return next;
+        });
+        return;
+      }
+
+      if (colId === LEVEL_COL_ID && newValue.kind === GridCellKind.Custom) {
+        const newLevel = (newValue.data as LevelCellProps).value;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newLevel };
+          return next;
+        });
+        return;
+      }
+
+      if (colId === ORIGIN_COL_ID && newValue.kind === GridCellKind.Custom) {
+        const newOrigin = (newValue.data as OriginCellProps).value;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newOrigin };
+          return next;
+        });
+        return;
+      }
+
+      if (
+        colId === IQA_STATUS_COL_ID &&
+        newValue.kind === GridCellKind.Custom
+      ) {
+        const newIqaStatus = (newValue.data as IqaStatusCellProps).value;
+        setData((prev) => {
+          const next = [...prev];
+          next[row] = { ...next[row], [colId]: newIqaStatus };
           return next;
         });
         return;
@@ -1765,6 +1937,11 @@ const SheetTable = ({ sheetId, projectId, initialRows }: SheetTableProps) => {
               authorSuggestCellRenderer,
               statusLLTCellRenderer,
               formatCheckedCellRenderer,
+              priorityCellRenderer,
+              itsStatusCellRenderer,
+              levelCellRenderer,
+              originCellRenderer,
+              iqaStatusCellRenderer,
             ]}
             theme={{
               bgHeader: "#f9fafb",

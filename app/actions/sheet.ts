@@ -4,13 +4,15 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { projectSheetName } from "@/lib/sheet-naming";
 import { getSession } from "@/lib/auth";
-import type { TaskStatus } from "@/app/generated/prisma/enums";
+import type { TaskStatus, SheetKind } from "@/app/generated/prisma/enums";
 
 export type SavedColumn = { id: string; title: string; width?: number };
 export type SavedRow = Record<string, string>;
 export type SheetTab = { id: string; name: string; projectId: string | null };
 
 const SHEETS_PATH = "/sheets";
+const ITS_PATH = "/its";
+const IQA_PATH = "/iqa";
 const TASKS_PATH = "/tasks";
 
 async function requireCurrentUserId(): Promise<string> {
@@ -222,8 +224,17 @@ export async function saveSheet(
 // createSheetForProject/renameSheetForProject) that need the full list
 // regardless of who's asking. Do NOT use this to render tabs to a user;
 // use listSheetsForCurrentUser for that.
-export async function listSheets(): Promise<SheetTab[]> {
+//
+// `kind` keeps the Progress Sheet's tabs, the ITS sheet's tabs
+// (app/actions/its-sheet.ts), and the IQA sheet's tabs
+// (app/actions/iqa-sheet.ts) from ever appearing in the same tab bar,
+// even though all three live in this one table. Defaults to PROGRESS so
+// every existing caller keeps working unchanged.
+export async function listSheets(
+  kind: SheetKind = "PROGRESS",
+): Promise<SheetTab[]> {
   return db.sheet.findMany({
+    where: { kind },
     orderBy: { createdAt: "asc" },
     select: { id: true, name: true, projectId: true },
   });
@@ -233,7 +244,9 @@ export async function listSheets(): Promise<SheetTab[]> {
 // tabs for projects they're assigned to, plus any tab that isn't tied to
 // a project at all (manually-created sheets have projectId: null and
 // aren't gated behind a project assignment).
-export async function listSheetsForCurrentUser(): Promise<SheetTab[]> {
+export async function listSheetsForCurrentUser(
+  kind: SheetKind = "PROGRESS",
+): Promise<SheetTab[]> {
   const session = await getSession();
   const userId = session?.userId as string | undefined;
   if (!userId) return [];
@@ -245,7 +258,7 @@ export async function listSheetsForCurrentUser(): Promise<SheetTab[]> {
   if (!user) return [];
 
   if (user.role === "UNIT_MANAGER") {
-    return listSheets();
+    return listSheets(kind);
   }
 
   const assignments = await db.assignment.findMany({
@@ -258,6 +271,7 @@ export async function listSheetsForCurrentUser(): Promise<SheetTab[]> {
 
   return db.sheet.findMany({
     where: {
+      kind,
       OR: [{ projectId: null }, { projectId: { in: assignedProjectIds } }],
     },
     orderBy: { createdAt: "asc" },
@@ -265,34 +279,57 @@ export async function listSheetsForCurrentUser(): Promise<SheetTab[]> {
   });
 }
 
-// Idempotent: guarantees at least one sheet exists without ever creating
-// two, even if called concurrently (e.g. dev-mode double-render, or a
-// race between a client redirect and a server re-render). Use this
-// instead of "if (tabs.length === 0) createSheet(...)" anywhere.
+// Default names for a brand-new, never-renamed sheet, per kind. Centralized
+// here instead of inline ternaries so adding a future kind means adding
+// one line, not hunting down every branch.
+const DEFAULT_FIRST_SHEET_NAME: Record<SheetKind, string> = {
+  PROGRESS: "Sheet 1",
+  ITS: "ITS 1",
+  IQA: "IQA 1",
+};
+const DEFAULT_UNTITLED_SHEET_NAME: Record<SheetKind, string> = {
+  PROGRESS: "Untitled Sheet",
+  ITS: "Untitled ITS Sheet",
+  IQA: "Untitled IQA Sheet",
+};
+
+// Idempotent: guarantees at least one sheet of the given kind exists
+// without ever creating two, even if called concurrently (e.g. dev-mode
+// double-render, or a race between a client redirect and a server
+// re-render). Use this instead of "if (tabs.length === 0)
+// createSheet(...)" anywhere.
 //
-// NOTE: this looks at ALL sheets system-wide, not just ones visible to
-// the current user. If it returns an existing sheet, check its
-// projectId before redirecting into it for a non-UNIT_MANAGER — see
-// app/(protected)/sheets/page.tsx for the pattern.
-export async function ensureDefaultSheet() {
+// NOTE: this looks at ALL sheets of this kind system-wide, not just ones
+// visible to the current user. If it returns an existing sheet, check
+// its projectId before redirecting into it for a non-UNIT_MANAGER — see
+// app/(protected)/sheets/page.tsx (or its ITS/IQA equivalents) for the
+// pattern.
+export async function ensureDefaultSheet(kind: SheetKind = "PROGRESS") {
   return db.$transaction(async (tx) => {
     const first = await tx.sheet.findFirst({
+      where: { kind },
       orderBy: { createdAt: "asc" },
       select: { id: true, name: true, projectId: true },
     });
     if (first) return first;
 
     return tx.sheet.create({
-      data: { name: "Sheet 1", columns: [], rows: [] },
+      data: {
+        name: DEFAULT_FIRST_SHEET_NAME[kind],
+        kind,
+        columns: [],
+        rows: [],
+      },
       select: { id: true, name: true, projectId: true },
     });
   });
 }
 
-export async function createSheet(name?: string) {
+export async function createSheet(name?: string, kind: SheetKind = "PROGRESS") {
   const sheet = await db.sheet.create({
     data: {
-      name: name?.trim() || "Untitled Sheet",
+      name: name?.trim() || DEFAULT_UNTITLED_SHEET_NAME[kind],
+      kind,
       columns: [],
       rows: [],
     },
@@ -317,6 +354,8 @@ export async function renameSheet(sheetId: string, name: string) {
     data: { name: name.trim() || "Untitled Sheet" },
   });
   revalidatePath(SHEETS_PATH);
+  revalidatePath(ITS_PATH);
+  revalidatePath(IQA_PATH);
 }
 
 // A project's sheet can only be deleted once it's no longer linked to a
@@ -341,39 +380,117 @@ export async function deleteSheet(sheetId: string) {
 
   await db.sheet.delete({ where: { id: sheetId } });
   revalidatePath(SHEETS_PATH);
+  revalidatePath(ITS_PATH);
+  revalidatePath(IQA_PATH);
 }
 
 // ---- Project-linked sheet lifecycle (called from actions/project.ts) ----
 
-// One sheet per project, named "FiAv-{project name}". If one already
-// exists for this project (shouldn't normally happen), return it as-is
-// rather than creating a duplicate.
-export async function createSheetForProject(
+// lib/sheet-naming.ts only has a Progress-sheet convention today
+// ("FiAv-{project name}"). Deriving the ITS/IQA names from it keeps all
+// three obviously paired without needing separate naming conventions
+// there. Centralized here (not inline ternaries) so a future kind is one
+// line, not a hunt through every call site.
+const PROJECT_SHEET_NAME_BY_KIND: Record<
+  SheetKind,
+  (projectName: string) => string
+> = {
+  PROGRESS: (name) => projectSheetName(name),
+  ITS: (name) => `${projectSheetName(name)} — ITS`,
+  IQA: (name) => `${projectSheetName(name)} — IQA`,
+};
+
+const REVALIDATE_PATH_BY_KIND: Record<SheetKind, string> = {
+  PROGRESS: SHEETS_PATH,
+  ITS: ITS_PATH,
+  IQA: IQA_PATH,
+};
+
+async function createProjectSheetOfKind(
   projectId: string,
   projectName: string,
+  kind: SheetKind,
 ) {
-  const existing = await db.sheet.findUnique({ where: { projectId } });
+  const existing = await db.sheet.findUnique({
+    where: { projectId_kind: { projectId, kind } },
+  });
   if (existing) return existing;
 
-  const sheet = await db.sheet.create({
+  return db.sheet.create({
     data: {
-      name: projectSheetName(projectName),
+      name: PROJECT_SHEET_NAME_BY_KIND[kind](projectName),
+      kind,
       columns: [],
       rows: [],
       projectId,
     },
   });
+}
+
+// The project's Progress sheet. If one already exists for this project
+// (shouldn't normally happen), returns it as-is rather than creating a
+// duplicate.
+export async function createSheetForProject(
+  projectId: string,
+  projectName: string,
+) {
+  const sheet = await createProjectSheetOfKind(
+    projectId,
+    projectName,
+    "PROGRESS",
+  );
   revalidatePath(SHEETS_PATH);
   return sheet;
+}
+
+// The project's ITS sheet — same idempotency guarantee as
+// createSheetForProject, just for the other kind.
+export async function createItsSheetForProject(
+  projectId: string,
+  projectName: string,
+) {
+  const sheet = await createProjectSheetOfKind(projectId, projectName, "ITS");
+  revalidatePath(ITS_PATH);
+  return sheet;
+}
+
+// The project's IQA sheet — same idempotency guarantee, third kind.
+export async function createIqaSheetForProject(
+  projectId: string,
+  projectName: string,
+) {
+  const sheet = await createProjectSheetOfKind(projectId, projectName, "IQA");
+  revalidatePath(IQA_PATH);
+  return sheet;
+}
+
+// Called from actions/project.ts's createProject: every new project gets
+// a Progress sheet, an ITS sheet, and an IQA sheet, the same way it
+// always got a Progress sheet before ITS/IQA existed.
+export async function createSheetsForProject(
+  projectId: string,
+  projectName: string,
+) {
+  const [progress, its, iqa] = await Promise.all([
+    createSheetForProject(projectId, projectName),
+    createItsSheetForProject(projectId, projectName),
+    createIqaSheetForProject(projectId, projectName),
+  ]);
+  return { progress, its, iqa };
 }
 
 export async function renameSheetForProject(
   projectId: string,
   newProjectName: string,
 ) {
-  await db.sheet.updateMany({
-    where: { projectId },
-    data: { name: projectSheetName(newProjectName) },
-  });
-  revalidatePath(SHEETS_PATH);
+  const kinds: SheetKind[] = ["PROGRESS", "ITS", "IQA"];
+  await Promise.all(
+    kinds.map((kind) =>
+      db.sheet.updateMany({
+        where: { projectId, kind },
+        data: { name: PROJECT_SHEET_NAME_BY_KIND[kind](newProjectName) },
+      }),
+    ),
+  );
+  kinds.forEach((kind) => revalidatePath(REVALIDATE_PATH_BY_KIND[kind]));
 }
