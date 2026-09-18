@@ -218,6 +218,65 @@ export async function saveSheet(
   }
 }
 
+// ---- Task -> Sheet status sync ------------------------------------------
+//
+// The reverse of SHEET_STATUS_TO_TASK_STATUS. Task.status can now also
+// change outside the sheet (Kanban drag-and-drop — see
+// actions/tasks.ts's updateTaskStatus). Without writing that change back
+// into the row's statusLLTDate cell, the next saveSheet() call would read
+// the still-stale cell and silently flip Task.status back via
+// syncSheetRowsToTasks above. "Out of scope" is written with the
+// corrected spelling even though the legacy typo is still accepted on
+// the way in.
+const TASK_STATUS_TO_SHEET_STATUS: Record<TaskStatus, string> = {
+  IN_PROGRESS: "In progress",
+  READY_FOR_DRY_RUN: "Ready for dry run",
+  DRY_RUN_IN_PROGRESS: "Dry run in progress",
+  READY_FOR_TC: "Ready for TC",
+  TC_DONE: "TC Done",
+  TC_CORRECTION: "TC Correction",
+  READY_FOR_QC: "Ready for QC",
+  READY_FOR_DELIVERY: "Ready for Delivery",
+  DELIVERED: "Delivered",
+  OUT_OF_SCOPE: "Out of scope",
+  BLOCKED: "Blocked",
+};
+
+// Called right after a Task's status changes from outside the sheet.
+// A no-op when the task has no sheetRowId (created straight from the
+// Kanban's "Add task", never tied to a sheet row) or its project has no
+// Progress sheet — nothing to keep in sync in either case.
+export async function syncTaskStatusToSheetRow(
+  projectId: string,
+  sheetRowId: string | null,
+  status: TaskStatus,
+): Promise<void> {
+  if (!sheetRowId) return;
+
+  const sheet = await db.sheet.findUnique({
+    where: { projectId_kind: { projectId, kind: "PROGRESS" } },
+    select: { id: true, rows: true },
+  });
+  if (!sheet) return;
+
+  const sheetStatus = TASK_STATUS_TO_SHEET_STATUS[status];
+  const rows = (sheet.rows as SavedRow[]) ?? [];
+
+  let changed = false;
+  const nextRows = rows.map((row) => {
+    if (row[ROW_ID_KEY] !== sheetRowId || row.statusLLTDate === sheetStatus) {
+      return row;
+    }
+    changed = true;
+    return { ...row, statusLLTDate: sheetStatus };
+  });
+
+  if (!changed) return;
+
+  await db.sheet.update({ where: { id: sheet.id }, data: { rows: nextRows } });
+  revalidatePath(SHEETS_PATH);
+}
+
 // ---- Tab management ----
 
 // Unrestricted — kept for internal callers (e.g. project.ts's

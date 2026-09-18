@@ -14,11 +14,15 @@ export default function DashboardLayout({
     <div className="flex h-screen w-screen overflow-hidden bg-background">
       <SidebarProvider>
         <NavSidebar />
-        <SidebarInset>
+        {/* min-w-0 overrides the flex item's default min-width: auto —
+            without it, a wide child (like the Kanban board) forces this
+            whole panel, and the page, wider than the viewport instead of
+            scrolling internally. */}
+        <SidebarInset className="min-w-0">
           <div className="flex items-center gap-2 border-b p-3 md:hidden">
             <SidebarTrigger />
           </div>
-          <main className="flex-1 flex flex-col h-full overflow-hidden bg-muted/20">
+          <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-muted/20">
             {children}
           </main>
         </SidebarInset>

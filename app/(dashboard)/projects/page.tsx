@@ -2,7 +2,7 @@ import { ProjectsView } from "@/components/projects-view";
 import { getCurrentUserProjects } from "@/lib/dal";
 
 const ProjectsPage = async () => {
-  const projects = await getCurrentUserProjects();
+  const projects = (await getCurrentUserProjects()) ?? [];
 
   return (
     <main>
@@ -13,6 +13,7 @@ const ProjectsPage = async () => {
             Browse, search, and manage all your projects in one place.
           </p>
         </div>
+
         <ProjectsView projects={projects} />
       </div>
     </main>
