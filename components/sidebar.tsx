@@ -112,6 +112,7 @@ const navGroups: {
         linkTo: "/kpi",
         icon: ChartColumnBig,
         name: "KPIs",
+        allowedRoles: ["UNIT_MANAGER"],
       },
     ],
   },

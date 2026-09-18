@@ -77,6 +77,95 @@ interface TestStatusCellProps {
 }
 type TestStatusCell = CustomCell<TestStatusCellProps>;
 
+// ---------------------------------------------------------------------
+// Editor components
+// ---------------------------------------------------------------------
+// IMPORTANT: React's rules of hooks (see https://react.dev/reference/rules/rules-of-hooks)
+// require any function that calls hooks to be either a Component (capitalized
+// name) or a custom Hook (name starting with "use"). glide-data-grid DOES
+// render `provideEditor().editor` as a React component internally, but an
+// inline anonymous arrow function assigned to an object property doesn't
+// satisfy the naming convention the lint rule (and some bundlers'
+// heuristics) rely on to recognize that. That mismatch is what was causing
+// the "Invalid hook call" / rules-of-hooks errors here.
+//
+// Fix: every editor that uses hooks is now pulled out into its own
+// top-level, capitalized function component, and `provideEditor` just
+// references it. Editors that don't need hooks (TestStatusEditor doesn't
+// strictly need them, but is kept as a component for consistency) follow
+// the same pattern so future edits don't reintroduce the bug.
+// ---------------------------------------------------------------------
+
+function TestStatusEditor(p: {
+  value: TestStatusCell;
+  onChange: (cell: TestStatusCell) => void;
+  onFinishedEditing: (cell?: TestStatusCell) => void;
+}) {
+  const { value, onChange, onFinishedEditing } = p;
+  const current = value.data.value;
+
+  const choose = (next: TestStatusValue) => {
+    const updated = { ...value, data: { ...value.data, value: next } };
+    onChange(updated);
+    onFinishedEditing(updated);
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 6,
+        padding: 8,
+        background: "white",
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+      }}
+    >
+      {TEST_STATUS_OPTIONS.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            choose(opt);
+          }}
+          style={{
+            padding: "6px 14px",
+            borderRadius: 999,
+            border: current === opt ? "2px solid #111827" : "1px solid #e5e7eb",
+            background: opt === "OK" ? "#dcfce7" : "#fee2e2",
+            color: opt === "OK" ? "#15803d" : "#b91c1c",
+            fontWeight: 600,
+            fontSize: 12,
+            cursor: "pointer",
+          }}
+        >
+          {opt}
+        </button>
+      ))}
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          choose("");
+        }}
+        style={{
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: "1px solid #e5e7eb",
+          background: "transparent",
+          color: "#6b7280",
+          fontSize: 12,
+          cursor: "pointer",
+        }}
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
 const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is TestStatusCell =>
@@ -155,72 +244,7 @@ const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
     return true;
   },
   provideEditor: () => ({
-    editor: (p) => {
-      const { value, onChange, onFinishedEditing } = p;
-      const current = value.data.value;
-
-      const choose = (next: TestStatusValue) => {
-        const updated = { ...value, data: { ...value.data, value: next } };
-        onChange(updated);
-        onFinishedEditing(updated);
-      };
-
-      return (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            padding: 8,
-            background: "white",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-          }}
-        >
-          {TEST_STATUS_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                choose(opt);
-              }}
-              style={{
-                padding: "6px 14px",
-                borderRadius: 999,
-                border:
-                  current === opt ? "2px solid #111827" : "1px solid #e5e7eb",
-                background: opt === "OK" ? "#dcfce7" : "#fee2e2",
-                color: opt === "OK" ? "#15803d" : "#b91c1c",
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              {opt}
-            </button>
-          ))}
-          <button
-            type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              choose("");
-            }}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: "1px solid #e5e7eb",
-              background: "transparent",
-              color: "#6b7280",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            Clear
-          </button>
-        </div>
-      );
-    },
+    editor: TestStatusEditor,
     disablePadding: true,
   }),
   onPaste: (val, cellData) => ({
@@ -251,6 +275,91 @@ interface AuthorSuggestCellProps {
 }
 type AuthorSuggestCell = CustomCell<AuthorSuggestCellProps>;
 
+function AuthorSuggestEditor(p: {
+  value: AuthorSuggestCell;
+  onChange: (cell: AuthorSuggestCell) => void;
+  onFinishedEditing: (cell?: AuthorSuggestCell) => void;
+}) {
+  const { value, onChange, onFinishedEditing } = p;
+  const { text: initialText, suggestions } = value.data;
+  const [inputValue, setInputValue] = useState(initialText);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = inputValue.trim().toLowerCase();
+    const pool = q
+      ? suggestions.filter((name) => name.toLowerCase().includes(q))
+      : suggestions;
+    return pool.slice(0, 8);
+  }, [inputValue, suggestions]);
+
+  const commit = (finalText: string) => {
+    const next = { ...value, data: { ...value.data, text: finalText } };
+    onChange(next);
+    onFinishedEditing(next);
+  };
+
+  return (
+    <div
+      style={{
+        background: "white",
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+        minWidth: 220,
+        overflow: "hidden",
+      }}
+    >
+      <input
+        ref={inputRef}
+        value={inputValue}
+        onChange={(e) => {
+          setInputValue(e.target.value);
+          onChange({
+            ...value,
+            data: { ...value.data, text: e.target.value },
+          });
+        }}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "8px 10px",
+          border: "none",
+          outline: "none",
+          fontSize: 13,
+        }}
+      />
+      {filtered.length > 0 && (
+        <div style={{ maxHeight: 176, overflowY: "auto" }}>
+          {filtered.map((name, idx) => (
+            <button
+              key={idx}
+              onClick={() => commit(name)}
+              type="button"
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "6px 10px",
+                border: "none",
+                color: "#111827",
+                fontSize: 13,
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is AuthorSuggestCell =>
@@ -274,86 +383,7 @@ const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
     return true;
   },
   provideEditor: () => ({
-    editor: (p) => {
-      const { value, onChange, onFinishedEditing } = p;
-      const { text: initialText, suggestions } = value.data;
-      const [inputValue, setInputValue] = useState(initialText);
-      const inputRef = useRef<HTMLInputElement>(null);
-
-      useEffect(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      }, []);
-
-      const filtered = useMemo(() => {
-        const q = inputValue.trim().toLowerCase();
-        const pool = q
-          ? suggestions.filter((name) => name.toLowerCase().includes(q))
-          : suggestions;
-        return pool.slice(0, 8);
-      }, [inputValue, suggestions]);
-
-      const commit = (finalText: string) => {
-        const next = { ...value, data: { ...value.data, text: finalText } };
-        onChange(next);
-        onFinishedEditing(next);
-      };
-
-      return (
-        <div
-          style={{
-            background: "white",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-            minWidth: 220,
-            overflow: "hidden",
-          }}
-        >
-          <input
-            ref={inputRef}
-            value={inputValue}
-            onChange={(e) => {
-              setInputValue(e.target.value);
-              onChange({
-                ...value,
-                data: { ...value.data, text: e.target.value },
-              });
-            }}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              padding: "8px 10px",
-              border: "none",
-              outline: "none",
-              fontSize: 13,
-            }}
-          />
-          {filtered.length > 0 && (
-            <div style={{ maxHeight: 176, overflowY: "auto" }}>
-              {filtered.map((name, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => commit(name)}
-                  type="button"
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "6px 10px",
-                    border: "none",
-                    color: "#111827",
-                    fontSize: 13,
-                  }}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    },
+    editor: AuthorSuggestEditor,
     disablePadding: true,
   }),
   onPaste: (val, cellData) => ({ ...cellData, text: val }),
@@ -1407,10 +1437,7 @@ const SheetTable = ({
       const row = visibleRowIndices[visRow];
       if (row === undefined) return;
       event.preventDefault();
-      // Give the user visual feedback that this is now the row they're
-      // acting on, same as if they'd clicked the row marker. Keep an
-      // existing multi-row selection intact if the right-clicked row is
-      // already part of it (so "Hide rows" can act on all of them).
+
       setSelection((prev) =>
         prev.rows.hasIndex(visRow)
           ? prev
@@ -1795,7 +1822,8 @@ const SheetTable = ({
         // Funnel icon instead of the default triangle, so it's obvious the
         // dropdown offers filtering — filled/colored once a filter is set.
         menuIcon: (c.id && columnFilters[c.id] ? "filterActive" : "filter") as
-          string | undefined,
+          | string
+          | undefined,
       })),
     ],
     [columns, columnFilters],
