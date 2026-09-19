@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { UsersView } from "@/components/users-view";
 import { getProjects, getUserOptions, getUsers } from "@/lib/dal";
+import { Suspense } from "react";
 
 interface ProjectUsersPageProps {
   params: Promise<{ projectId: string }>;
@@ -33,12 +34,14 @@ export default async function ProjectUsersPage({
             Browse, search, and manage the people on this project.
           </p>
         </div>
-        <UsersView
-          users={visibleUsers}
-          projects={projects}
-          userOptions={userOptions}
-          fixedProject={project}
-        />
+        <Suspense fallback={<div>Loading</div>}>
+          <UsersView
+            users={visibleUsers}
+            projects={projects}
+            userOptions={userOptions}
+            fixedProject={project}
+          />
+        </Suspense>
       </div>
     </main>
   );

@@ -1,7 +1,7 @@
 import { ProjectsView } from "@/components/projects-view";
 import { getCurrentUserProjects } from "@/lib/dal";
 import { Suspense } from "react";
-
+export const dynamic = "force-dynamic";
 const ProjectsPage = async () => {
   const projects = (await getCurrentUserProjects()) ?? [];
 

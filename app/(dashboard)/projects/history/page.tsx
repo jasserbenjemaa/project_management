@@ -1,4 +1,4 @@
-// app/history/page.tsx
+import { Suspense } from "react";
 import { getHistory } from "@/lib/dal"; // adjust to your actual path
 import {
   Table,
@@ -88,56 +88,58 @@ export default async function HistoryPage() {
         </p>
       </div>
 
-      {!history ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-16">
-            <Briefcase className="h-10 w-10 text-muted-foreground" />
-            <p className="text-muted-foreground">No project history yet.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-2">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Start</TableHead>
-                  <TableHead>End</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      {item.projectName}
-                    </TableCell>
-                    <TableCell>{item.roleOnProject}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        <CalendarDays className="h-3.5 w-3.5" />
-                        {formatDate(item.startDate)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(item.endDate)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {getDuration(item.startDate, item.endDate)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <StatusBadge status={item.project?.status ?? null} />
-                    </TableCell>
+      <Suspense fallback={<div>Loading...</div>}>
+        {!history ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center gap-3 py-16">
+              <Briefcase className="h-10 w-10 text-muted-foreground" />
+              <p className="text-muted-foreground">No project history yet.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="py-2">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead className="text-right">Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {history.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">
+                        {item.projectName}
+                      </TableCell>
+                      <TableCell>{item.roleOnProject}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          {formatDate(item.startDate)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDate(item.endDate)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getDuration(item.startDate, item.endDate)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <StatusBadge status={item.project?.status ?? null} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </Suspense>
     </div>
   );
 }
