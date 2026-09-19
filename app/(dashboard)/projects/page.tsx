@@ -1,5 +1,6 @@
 import { ProjectsView } from "@/components/projects-view";
 import { getCurrentUserProjects } from "@/lib/dal";
+import { Suspense } from "react";
 
 const ProjectsPage = async () => {
   const projects = (await getCurrentUserProjects()) ?? [];
@@ -14,7 +15,9 @@ const ProjectsPage = async () => {
           </p>
         </div>
 
-        <ProjectsView projects={projects} />
+        <Suspense fallback={null}>
+          <ProjectsView projects={projects} />
+        </Suspense>
       </div>
     </main>
   );

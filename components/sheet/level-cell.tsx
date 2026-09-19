@@ -41,7 +41,7 @@ const isLevelValue = (val: string): val is LevelValue =>
 export const levelCellRenderer: CustomRenderer<LevelCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is LevelCell =>
-    (cell.data as any)?.kind === "level-cell",
+    (cell.data as { kind?: unknown })?.kind === "level-cell",
   draw: (args: DrawArgs<LevelCell>) => {
     const { ctx, theme, rect, cell } = args;
     const { value } = cell.data;
@@ -88,9 +88,12 @@ export const levelCellRenderer: CustomRenderer<LevelCell> = {
         pillHeight / 2 +
         getMiddleCenterBias(ctx, `600 12px ${theme.fontFamily}`);
       // Clip long labels ("Code review", "Architecture") rather than
-      // overflow into the next cell.
+      // overflow into the next cell. `label` is explicitly `string` (not
+      // LevelValue): it gets progressively sliced down for display, and
+      // slice() always returns a plain string, which no longer fits the
+      // narrow level-value union.
       const maxTextWidth = pillWidth - 12;
-      let label = value;
+      let label: string = value;
       if (textWidth > maxTextWidth) {
         while (
           label.length > 1 &&

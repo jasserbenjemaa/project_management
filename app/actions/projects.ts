@@ -109,6 +109,30 @@ export type ProjectProgressItem = {
 const DELIVERY_STATUS_COLUMN_ID = "statusLLTDate";
 const DELIVERED_VALUE = "Delivered";
 
+// Shared with getActiveProjectProgress below: % of a single project's
+// Progress-sheet rows whose delivery-status column is "Delivered". This
+// isn't a stored column on Project - it's derived from the sheet's row
+// data - so createProject/updateProject call this to attach a `progress`
+// figure onto the object they return, since the `Project` type
+// (features/projects-columns.tsx) requires one. Returns 0 when there's no
+// Progress sheet yet, or it has no rows.
+async function computeProjectProgress(projectId: string): Promise<number> {
+  const sheet = await db.sheet.findFirst({
+    where: { projectId, kind: "PROGRESS" },
+    select: { rows: true },
+  });
+
+  if (!sheet || !Array.isArray(sheet.rows) || sheet.rows.length === 0) {
+    return 0;
+  }
+
+  const rows = sheet.rows as Record<string, string>[];
+  const delivered = rows.filter(
+    (r) => r[DELIVERY_STATUS_COLUMN_ID] === DELIVERED_VALUE,
+  ).length;
+  return Math.round((delivered / rows.length) * 100);
+}
+
 // "Project progress" widget: % of a project's sheet rows whose status
 // column is "Delivered", for each ACTIVE project. This reads the sheet
 // data itself (Sheet.rows, a JSON blob keyed by column id) rather than
@@ -324,7 +348,23 @@ export async function createProject(input: {
     revalidatePath(SHEETS_PATH);
     revalidatePath(ITS_PATH);
     revalidatePath(IQA_PATH);
-    return { success: true, project: project } as const;
+    // progress is always 0 right after creation - the Progress sheet was
+    // just created above with no rows yet, so there's nothing delivered.
+    // All dates are converted to strings here since Project
+    // (features/projects-columns.tsx) expects dates as serialized
+    // strings, matching how project rows normally reach the client.
+    return {
+      success: true,
+      project: {
+        ...project,
+        deliveryDate: project.deliveryDate
+          ? project.deliveryDate.toISOString()
+          : null,
+        createdAt: project.createdAt.toISOString(),
+        updatedAt: project.updatedAt.toISOString(),
+        progress: 0,
+      },
+    } as const;
   } catch (error) {
     console.error("Failed to create project", error);
     return { success: false, error: "Failed to create project." } as const;
@@ -355,11 +395,27 @@ export async function updateProject(
     // "FiAv-{name} — IQA") in sync with the project.
     await renameSheetForProject(id, project.name);
 
+    // Editing name/status/date doesn't touch the sheet, but recomputing
+    // here (rather than trusting a client-supplied value) keeps this in
+    // sync with whatever the sheet actually looks like right now.
+    const progress = await computeProjectProgress(project.id);
+
     revalidatePath(PROJECTS_PATH);
     revalidatePath(SHEETS_PATH);
     revalidatePath(ITS_PATH);
     revalidatePath(IQA_PATH);
-    return { success: true, project: project } as const;
+    return {
+      success: true,
+      project: {
+        ...project,
+        deliveryDate: project.deliveryDate
+          ? project.deliveryDate.toISOString()
+          : null,
+        createdAt: project.createdAt.toISOString(),
+        updatedAt: project.updatedAt.toISOString(),
+        progress,
+      },
+    } as const;
   } catch (error) {
     console.error("Failed to update project", error);
     return { success: false, error: "Failed to update project." } as const;
@@ -387,7 +443,6 @@ export async function deleteProject(id: string) {
     } as const;
   }
 }
-// Add to your server actions file (e.g., actions/project.ts)
 
 export async function getGlobalPipelineStats(): Promise<
   | { success: true; total: number; stats: { label: string; count: number }[] }
@@ -407,7 +462,6 @@ export async function getGlobalPipelineStats(): Promise<
 
     let total = 0;
     const tally: Record<string, number> = {};
-    const DELIVERY_STATUS_COLUMN_ID = "statusLLTDate";
 
     for (const sheet of sheets) {
       if (!Array.isArray(sheet.rows)) continue;

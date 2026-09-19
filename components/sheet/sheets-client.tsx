@@ -9,7 +9,7 @@ import {
   deleteSheet as deleteProgressSheet,
 } from "@/app/actions/sheet";
 import type { RowData } from "@/components/sheet/sheet-table";
-import type { GridColumn } from "@glideapps/glide-data-grid";
+import type { SizedGridColumn } from "@glideapps/glide-data-grid";
 
 const SheetTable = dynamic(() => import("@/components/sheet/sheet-table"), {
   ssr: false,
@@ -38,8 +38,9 @@ export default function SheetsClient({
   initialRows: RowData[];
   // Columns a brand-new tab (and the underlying SheetTable) should start
   // from. Defaults to the Progress Sheet's built-in columns — pass
-  // ITS_DEFAULT_COLUMNS from the ITS page instead.
-  defaultColumns?: GridColumn[];
+  // ITS_DEFAULT_COLUMNS from the ITS page instead. Must be
+  // SizedGridColumn[] (every column has a width) to match SheetTable.
+  defaultColumns?: SizedGridColumn[];
   // Prefix used when naming a tab created via the "+" button, e.g.
   // "Sheet 3" vs "ITS 3".
   newTabNamePrefix?: string;
@@ -65,12 +66,21 @@ export default function SheetsClient({
 
   // useState(tabs) only seeds the initial value — it does NOT resync when
   // the `tabs` prop changes on a later render (e.g. after router.push to a
-  // new ?id=, or router.refresh()). Without this, newly added/deleted
-  // sheets only show up after a hard reload. Keep localTabs mirrored to
-  // whatever the server actually sent down.
-  useEffect(() => {
+  // new ?id=, or router.refresh()). Without a resync, newly added/deleted
+  // sheets only show up after a hard reload, so localTabs must be kept
+  // mirrored to whatever the server actually sent down.
+  //
+  // This is done with React's "adjust state when a prop changes" pattern
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  // instead of a useEffect: the state update happens during render, guarded
+  // by a comparison, so React re-renders immediately with the fresh value
+  // and never commits a stale frame. An effect would commit the stale
+  // frame first and then trigger a second, cascading render.
+  const [prevTabsProp, setPrevTabsProp] = useState(tabs);
+  if (tabs !== prevTabsProp) {
+    setPrevTabsProp(tabs);
     setLocalTabs(tabs);
-  }, [tabs]);
+  }
 
   const activeProjectId =
     localTabs.find((t) => t.id === sheetId)?.projectId ?? null;
@@ -142,9 +152,13 @@ export default function SheetsClient({
     };
   }, [moreMenuOpen]);
 
-  useEffect(() => {
+  // The menu only ever opens through this toggle, so the search box is
+  // cleared here, at the moment it opens — no effect needed to reset it
+  // after it closes (however it closed: outside click, Escape, selection).
+  const toggleMoreMenu = () => {
     if (!moreMenuOpen) setMoreSearch("");
-  }, [moreMenuOpen]);
+    setMoreMenuOpen((prev) => !prev);
+  };
 
   const handleAddTab = async () => {
     const created = await createSheetAction(
@@ -293,7 +307,7 @@ export default function SheetsClient({
           <div className="relative shrink-0" ref={moreMenuRef}>
             <button
               type="button"
-              onClick={() => setMoreMenuOpen((prev) => !prev)}
+              onClick={toggleMoreMenu}
               className={`px-2 py-1.5 text-xs rounded-t-md border shrink-0 ${
                 moreMenuOpen
                   ? "bg-white border-gray-300 border-b-white -mb-px text-gray-900"

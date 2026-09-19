@@ -324,7 +324,7 @@ export default function KanbanBoard({
         {STATUS_COLUMNS.map((col) => (
           <div
             key={col.id}
-            className="flex min-w-[260px] flex-1 flex-col rounded-xl border border-border/60 bg-muted/30 p-4"
+            className="flex min-w-65 flex-1 flex-col rounded-xl border border-border/60 bg-muted/30 p-4"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -356,7 +356,7 @@ export default function KanbanBoard({
                 <div
                   ref={provided.innerRef}
                   {...provided.droppableProps}
-                  className={`flex max-h-[55vh] min-h-[80px] flex-col gap-2 overflow-y-auto rounded-lg p-1.5 pr-2 transition-colors ${
+                  className={`flex max-h-[55vh] min-h-20 flex-col gap-2 overflow-y-auto rounded-lg p-1.5 pr-2 transition-colors ${
                     snapshot.isDraggingOver ? "bg-primary/5" : ""
                   }`}
                 >

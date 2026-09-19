@@ -41,7 +41,7 @@ const isIqaStatusValue = (val: string): val is IqaStatusValue =>
 export const iqaStatusCellRenderer: CustomRenderer<IqaStatusCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is IqaStatusCell =>
-    (cell.data as any)?.kind === "iqa-status-cell",
+    (cell.data as { kind?: unknown })?.kind === "iqa-status-cell",
   draw: (args: DrawArgs<IqaStatusCell>) => {
     const { ctx, theme, rect, cell } = args;
     const { value } = cell.data;
@@ -87,9 +87,12 @@ export const iqaStatusCellRenderer: CustomRenderer<IqaStatusCell> = {
         pillY +
         pillHeight / 2 +
         getMiddleCenterBias(ctx, `600 12px ${theme.fontFamily}`);
-      // "CR to be created" is long — clip rather than overflow.
+      // "CR to be created" is long — clip rather than overflow. `label`
+      // is explicitly `string` (not IqaStatusValue): it gets progressively
+      // sliced down for display, and slice() always returns a plain
+      // string, which no longer fits the narrow status-value union.
       const maxTextWidth = pillWidth - 12;
-      let label = value;
+      let label: string = value;
       if (textWidth > maxTextWidth) {
         while (
           label.length > 1 &&

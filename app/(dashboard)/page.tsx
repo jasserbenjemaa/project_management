@@ -4,6 +4,7 @@ import {
   FolderOpen,
   User,
   Users,
+  SquareKanban,
   ChartColumnBig,
   LucideIcon,
 } from "lucide-react";
@@ -32,6 +33,15 @@ const Home = () => {
     allowedRoles?: ("UNIT_MANAGER" | "ENGAGEMENT_MANAGER" | "CONSULTANT")[];
   }
   const allCards: CardData[] = [
+    {
+      linkTo: "personal-sheet",
+      imageUrl: "/campgemini_values/modesty.svg",
+      icon: SquareKanban,
+      name: "personal sheet",
+      color: "purple",
+      description: "Track project tasks",
+      allowedRoles: ["CONSULTANT"],
+    },
     {
       linkTo: "/projects/history",
       imageUrl: "/campgemini_values/boldness.svg",

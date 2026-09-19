@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { UsersView } from "@/components/users-view";
 import { getProjects, getUserOptions, getUsers } from "@/lib/dal";
 
@@ -18,15 +19,15 @@ export default async function ConsultantsPage() {
             Browse, search, and manage all the consultants in one place.
           </p>
         </div>
-        <UsersView
-          users={visibleUsers}
-          projects={projects}
-          userOptions={userOptions}
-          // TODO: replace "CONSULTANT" with your actual Role enum value
-          // (e.g. Role.CONSULTANT if you're using a Prisma-generated enum).
-          fixedRole="CONSULTANT"
-          allowCreate
-        />
+        <Suspense fallback={null}>
+          <UsersView
+            users={visibleUsers}
+            projects={projects}
+            userOptions={userOptions}
+            fixedRole="CONSULTANT"
+            allowCreate
+          />
+        </Suspense>
       </div>
     </main>
   );

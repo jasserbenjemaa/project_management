@@ -54,7 +54,10 @@ interface UsersViewProps {
   // When set, locks the role filter to this role (e.g. "CONSULTANT"), and
   // the "New" button creates a user with this role directly - no role
   // picker shown in the dialog, since there's nothing to choose.
-  fixedRole?: string;
+  // Typed as the Prisma `Role` enum (not a plain string) so everything
+  // derived from it — the effective filter, the create-dialog defaults —
+  // stays assignable to what UserFormDialog expects.
+  fixedRole?: Role;
   // Controls whether the create button renders at all when there's no
   // fixedProject. Defaults to true so existing pages keep working.
   allowCreate?: boolean;
@@ -310,10 +313,10 @@ export const UsersView = ({
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
         user={editingUser}
-        projects={projects}
+        projectOptions={projects}
         userOptions={userOptions}
         defaultValues={editingUser ? undefined : createDefaults}
-        fixedRole={editingUser ? undefined : (fixedRole as Role | undefined)}
+        fixedRole={editingUser ? undefined : fixedRole}
         onSaved={() => router.refresh()}
       />
 

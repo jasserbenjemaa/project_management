@@ -1,5 +1,6 @@
 import { UsersView } from "@/components/users-view";
 import { getProjects, getUserOptions, getUsers } from "@/lib/dal";
+import { Suspense } from "react";
 
 export default async function EngagementManagersPage() {
   const [users, projects, userOptions] = await Promise.all([
@@ -18,13 +19,15 @@ export default async function EngagementManagersPage() {
             Browse and search all the engagement managers in one place.
           </p>
         </div>
-        <UsersView
-          users={visibleUsers}
-          projects={projects}
-          userOptions={userOptions}
-          fixedRole="ENGAGEMENT_MANAGER"
-          allowCreate={true}
-        />
+        <Suspense fallback={null}>
+          <UsersView
+            users={visibleUsers}
+            projects={projects}
+            userOptions={userOptions}
+            fixedRole="ENGAGEMENT_MANAGER"
+            allowCreate={true}
+          />
+        </Suspense>
       </div>
     </main>
   );

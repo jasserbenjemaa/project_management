@@ -5,6 +5,7 @@ import {
   GridCell,
   GridCellKind,
   GridColumn,
+  SizedGridColumn,
   Item,
   EditableGridCell,
   GridSelection,
@@ -96,6 +97,13 @@ type TestStatusCell = CustomCell<TestStatusCellProps>;
 // the same pattern so future edits don't reintroduce the bug.
 // ---------------------------------------------------------------------
 
+// Type guard for custom-cell `data` payloads. Keeps every renderer's
+// isMatch type-safe without needing an explicit `any` cast.
+const hasKind = (data: unknown, kind: string): boolean =>
+  typeof data === "object" &&
+  data !== null &&
+  (data as { kind?: unknown }).kind === kind;
+
 function TestStatusEditor(p: {
   value: TestStatusCell;
   onChange: (cell: TestStatusCell) => void;
@@ -169,7 +177,7 @@ function TestStatusEditor(p: {
 const testStatusCellRenderer: CustomRenderer<TestStatusCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is TestStatusCell =>
-    (cell.data as any)?.kind === "test-status-cell",
+    hasKind(cell.data, "test-status-cell"),
   draw: (args: DrawArgs<TestStatusCell>) => {
     const { ctx, theme, rect, cell } = args;
     const { value } = cell.data;
@@ -363,7 +371,7 @@ function AuthorSuggestEditor(p: {
 const authorSuggestCellRenderer: CustomRenderer<AuthorSuggestCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is AuthorSuggestCell =>
-    (cell.data as any)?.kind === "author-suggest-cell",
+    hasKind(cell.data, "author-suggest-cell"),
   draw: (args: DrawArgs<AuthorSuggestCell>) => {
     const { ctx, theme, rect, cell } = args;
     const { text } = cell.data;
@@ -409,7 +417,7 @@ type RowNumberCell = CustomCell<RowNumberCellProps>;
 const rowNumberCellRenderer: CustomRenderer<RowNumberCell> = {
   kind: GridCellKind.Custom,
   isMatch: (cell): cell is RowNumberCell =>
-    (cell.data as any)?.kind === "row-number-cell",
+    hasKind(cell.data, "row-number-cell"),
   draw: (args: DrawArgs<RowNumberCell>) => {
     const { ctx, theme, rect, cell } = args;
     const { rowNumber, hiddenAboveCount } = cell.data;
@@ -479,7 +487,10 @@ const headerMenuItemStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const initialColumns: GridColumn[] = [
+// NOTE: typed as SizedGridColumn (not GridColumn). GridColumn is the union
+// `SizedGridColumn | AutoGridColumn` and only the sized variant has a
+// `width`, so reading `c.width` on a plain GridColumn is a type error.
+const initialColumns: SizedGridColumn[] = [
   { title: "Priority", id: "priority", width: 90 },
   { title: "LLR ID", id: "llrId", width: 110 },
   { title: "Function Name", id: "functionName", width: 160 },
@@ -494,41 +505,6 @@ const initialColumns: GridColumn[] = [
   { title: "Comment LLT", id: "commentLLT", width: 200 },
   { title: "Status LLT (JJ/MM/AAAA)", id: "statusLLTDate", width: 180 },
   { title: "Estimation (days)", id: "estimationDays", width: 140 },
-];
-
-const seedData: RowData[] = [
-  {
-    priority: "1",
-    llrId: "LLR-0001",
-    functionName: "compute_checksum",
-    complexity: "3",
-    fileC: "checksum.c",
-    codeVersion: "v1.2.0",
-    authorLLR: "J. Martin",
-    authorLLT: "S. Bernard",
-    [TEST_STATUS_COL_ID]: "OK",
-    its: "",
-    iqa: "",
-    commentLLT: "",
-    statusLLTDate: "26/07/2026",
-    estimationDays: "2",
-  },
-  {
-    priority: "2",
-    llrId: "LLR-0002",
-    functionName: "init_sensor",
-    complexity: "5",
-    fileC: "sensor_init.c",
-    codeVersion: "v1.0.4",
-    authorLLR: "A. Petit",
-    authorLLT: "S. Bernard",
-    [TEST_STATUS_COL_ID]: "KO",
-    its: "ITS-4471",
-    iqa: "Open",
-    commentLLT: "Boundary case not covered, re-test after fix.",
-    statusLLTDate: "25/07/2026",
-    estimationDays: "1.5",
-  },
 ];
 
 const emptySelection: GridSelection = {
@@ -572,12 +548,6 @@ const createEmptyRow = (cols: GridColumn[]): RowData => {
   return row;
 };
 
-const buildInitialData = (): RowData[] => [
-  ...Array.from({ length: STARTER_BLANK_ROWS }, () =>
-    createEmptyRow(initialColumns),
-  ),
-];
-
 const MIN_COL_WIDTH = 80;
 const MAX_COL_WIDTH = 1420; // beyond this, text wraps + the row grows taller instead
 const CELL_TEXT_PADDING = 32; // left+right cell padding + a little slack
@@ -588,6 +558,31 @@ const LINE_HEIGHT = 18; // px per wrapped line at 13px font
 const ROW_VERTICAL_PADDING = 16; // top+bottom cell padding
 const MIN_ROW_HEIGHT = 34; // default single-line row height
 const MAX_ROW_HEIGHT = 220; // cap so one giant paragraph can't take over the sheet
+
+// Shared offscreen canvas context used only for measuring text widths.
+// Lives at module level (not in a component ref) so it can be called while
+// rendering — e.g. from useMemo — without tripping the "no ref access
+// during render" rule.
+let measureCtx: CanvasRenderingContext2D | null = null;
+const getMeasureCtx = (): CanvasRenderingContext2D | null => {
+  if (typeof document === "undefined") return null;
+  if (!measureCtx) {
+    measureCtx = document.createElement("canvas").getContext("2d");
+  }
+  return measureCtx;
+};
+
+// Every distinct non-blank value in a column, sorted. Used to build the
+// checkbox list of the column filter. Blank cells are intentionally
+// excluded — the filter is only for choosing among actual values.
+const getDistinctColumnValues = (rows: RowData[], colId: string): string[] => {
+  const seen = new Set<string>();
+  rows.forEach((row) => {
+    const v = row?.[colId] ?? "";
+    if (v) seen.add(v);
+  });
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
+};
 
 // Counts how many lines `text` would wrap onto inside `maxWidth`.
 const countWrappedLines = (
@@ -639,8 +634,8 @@ interface SheetTableProps {
   // saved-but-empty sheet falls back to (see the loadSheet effect below).
   // Defaults to the Progress Sheet's columns so existing callers don't
   // need to change. Pass ITS_DEFAULT_COLUMNS (its-columns.ts) from the
-  // ITS page instead.
-  defaultColumns?: GridColumn[];
+  // ITS page instead. Must be SizedGridColumn[] (every column has a width).
+  defaultColumns?: SizedGridColumn[];
 }
 export type { RowData };
 
@@ -650,7 +645,7 @@ const SheetTable = ({
   initialRows,
   defaultColumns = initialColumns,
 }: SheetTableProps) => {
-  const [columns, setColumns] = useState<GridColumn[]>(defaultColumns);
+  const [columns, setColumns] = useState<SizedGridColumn[]>(defaultColumns);
   const [data, setData] = useState<RowData[]>(() => [
     ...initialRows.map(ensureRowId),
     ...Array.from({ length: STARTER_BLANK_ROWS }, () =>
@@ -703,28 +698,44 @@ const SheetTable = ({
   // Gate autosave until the initial load has resolved, so we don't
   // immediately overwrite saved data with the default seed/buffer.
   const [isLoaded, setIsLoaded] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
+  // Not rendered anywhere yet (failures are only logged to the console), so
+  // only the setter is bound. Bind the first element again if you add a
+  // "Saving… / Saved / Error" indicator to the UI.
+  const [, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
 
   // Users for the Author LLR / Author LLT autocomplete dropdowns. Scoped
   // to consultants assigned to this sheet's project — refetched whenever
   // the active project changes (e.g. switching sheet tabs).
-  const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
+  //
+  // The fetched result is stored together with the projectId it belongs
+  // to, and `userSuggestions` is DERIVED from it. That way "no project"
+  // (or a project switch whose fetch hasn't landed yet) just yields an
+  // empty list during render — no synchronous setState inside the effect.
+  const [suggestionsState, setSuggestionsState] = useState<{
+    projectId: string;
+    users: UserSuggestion[];
+  } | null>(null);
+
+  const userSuggestions = useMemo<UserSuggestion[]>(
+    () =>
+      projectId && suggestionsState?.projectId === projectId
+        ? suggestionsState.users
+        : [],
+    [projectId, suggestionsState],
+  );
 
   useEffect(() => {
     // Manually-created sheets (no linked project) have no consultant pool
-    // to suggest from — leave suggestions empty rather than calling the
-    // action with a nonsensical id.
-    if (!projectId) {
-      setUserSuggestions([]);
-      return;
-    }
+    // to suggest from — nothing to fetch (userSuggestions is derived as
+    // [] above) rather than calling the action with a nonsensical id.
+    if (!projectId) return;
 
     let cancelled = false;
     getUserSuggestions(projectId)
       .then((users) => {
-        if (!cancelled) setUserSuggestions(users);
+        if (!cancelled) setSuggestionsState({ projectId, users });
       })
       .catch((err) => console.error("Failed to load user suggestions", err));
     return () => {
@@ -750,15 +761,6 @@ const SheetTable = ({
     return result;
   }, [userSuggestions]);
 
-  const measureCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const getMeasureCtx = useCallback(() => {
-    if (typeof document === "undefined") return null;
-    if (!measureCanvasRef.current) {
-      measureCanvasRef.current = document.createElement("canvas");
-    }
-    return measureCanvasRef.current.getContext("2d");
-  }, []);
-
   // --- Load saved data on mount ---
   // NOTE: `defaultColumns` is deliberately NOT a dependency of the effect
   // below. It arrives as a prop from a server component, so the RSC
@@ -770,8 +772,15 @@ const SheetTable = ({
   // The Progress sheet never hit this because it doesn't pass the prop
   // (it falls back to the module-local `initialColumns`, stable identity),
   // which is why only ITS and IQA showed the bug.
+  //
+  // The ref is kept current from an effect (not assigned during render,
+  // which React forbids). This effect is declared BEFORE the load effect,
+  // and effects run in declaration order, so the load effect always sees
+  // the latest value.
   const defaultColumnsRef = useRef(defaultColumns);
-  defaultColumnsRef.current = defaultColumns;
+  useEffect(() => {
+    defaultColumnsRef.current = defaultColumns;
+  }, [defaultColumns]);
 
   useEffect(() => {
     let cancelled = false;
@@ -782,7 +791,7 @@ const SheetTable = ({
         if (cancelled) return;
 
         if (saved && saved.rows.length > 0) {
-          const loadedColumns: GridColumn[] =
+          const loadedColumns: SizedGridColumn[] =
             saved.columns.length > 0
               ? saved.columns.map((c) => ({
                   title: c.title,
@@ -1119,7 +1128,7 @@ const SheetTable = ({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const persistNow = useCallback(
-    (nextData: RowData[], nextColumns: GridColumn[] = columns) => {
+    (nextData: RowData[], nextColumns: SizedGridColumn[] = columns) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       setSaveStatus("saving");
       saveSheet(
@@ -1218,9 +1227,19 @@ const SheetTable = ({
     });
   }, [data.length, visibleRowIndices.length, insertRowAt]);
 
-  // --- Column header menu: insert left/right, rename, delete ---
+  // --- Column header menu: insert left/right, rename, delete, filter ---
   const [headerMenu, setHeaderMenu] = useState<HeaderMenuState | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  // Filter-menu local state. Declared up here (before onHeaderMenuClick)
+  // because that handler seeds them at the moment the menu opens — which
+  // replaces the old "reset in an effect" approach and its synchronous
+  // setState-in-effect.
+  const [filterSearch, setFilterSearch] = useState("");
+  // The checkboxes being edited right now, before "Apply" commits them to
+  // columnFilters. Seeded from the column's current filter (or "every
+  // value checked" if it has none) each time a column's menu is opened.
+  const [pendingFilterValues, setPendingFilterValues] =
+    useState<Set<string> | null>(null);
   const headerMenuRef = useRef<HTMLDivElement | null>(null);
 
   const onHeaderMenuClick = useCallback(
@@ -1229,10 +1248,21 @@ const SheetTable = ({
       const dataColIndex = colIndex - 1;
       const col = columns[dataColIndex];
       if (!col?.id) return;
+
+      // Seed all of the menu's local state right here, in the event
+      // handler, from the same universe of values the checkbox list
+      // renders (getDistinctColumnValues) — one source of truth.
+      const existing = columnFilters[col.id];
       setRenameValue(String(col.title ?? ""));
+      setFilterSearch("");
+      setPendingFilterValues(
+        existing
+          ? new Set(existing)
+          : new Set(getDistinctColumnValues(data, col.id)),
+      );
       setHeaderMenu({ colIndex: dataColIndex, colId: col.id, bounds });
     },
-    [columns],
+    [columns, columnFilters, data],
   );
 
   // Right-click on a column header opens the exact same menu (filter,
@@ -1280,44 +1310,10 @@ const SheetTable = ({
   // Blank cells are intentionally excluded from the checkbox list — this
   // filter is only for choosing among actual values, not for toggling
   // blanks in/out.
-  const filterColumnValues = useMemo(() => {
-    if (!headerMenu) return [];
-    const colId = headerMenu.colId;
-    const seen = new Set<string>();
-    data.forEach((row) => {
-      const v = row?.[colId] ?? "";
-      if (v) seen.add(v);
-    });
-    return Array.from(seen).sort((a, b) => a.localeCompare(b));
-  }, [headerMenu, data]);
-
-  const [filterSearch, setFilterSearch] = useState("");
-  // The checkboxes being edited right now, before "Apply" commits them to
-  // columnFilters. Re-seeded from the column's current filter (or "every
-  // value checked" if it has none) whenever a different column's menu opens.
-  const [pendingFilterValues, setPendingFilterValues] =
-    useState<Set<string> | null>(null);
-
-  useEffect(() => {
-    if (!headerMenu) {
-      setPendingFilterValues(null);
-      setFilterSearch("");
-      return;
-    }
-    const existing = columnFilters[headerMenu.colId];
-    // Seed from filterColumnValues (the same universe the checkbox list
-    // renders and "select all" toggles against), not by re-scanning `data`
-    // independently — keeping one source of truth avoids the two ever
-    // drifting apart (e.g. sets with different sizes but the same
-    // intended contents).
-    setPendingFilterValues(
-      existing ? new Set(existing) : new Set(filterColumnValues),
-    );
-    setFilterSearch("");
-    // Only re-seed when a *different column's* menu opens, not on every
-    // keystroke elsewhere — deliberately excludes columnFilters/data.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [headerMenu?.colId]);
+  const filterColumnValues = useMemo(
+    () => (headerMenu ? getDistinctColumnValues(data, headerMenu.colId) : []),
+    [headerMenu, data],
+  );
 
   const visibleFilterValues = useMemo(() => {
     const q = filterSearch.trim().toLowerCase();
@@ -1670,53 +1666,55 @@ const SheetTable = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, columnsSignature, columnIds, isLoaded, sheetId]);
 
-  // --- Auto-grow every column so its content (and header) is never clipped ---
-  useEffect(() => {
+  // --- Auto-fit column widths (DERIVED, not stored in state) ---
+  // Previously an effect measured every column and called setColumns to
+  // grow any that were too narrow. That's derived state, so it's now
+  // computed during render instead:
+  //   • `autoColumnWidths`  – the width each column needs to show its
+  //                            widest content (and its header) unclipped
+  //   • `displayColumns`    – the stored width, grown to that need
+  // `columns` (stored/saved/resized) is untouched; only what the grid
+  // renders and what row-height measurement uses is `displayColumns`.
+  const autoColumnWidths = useMemo(() => {
     const ctx = getMeasureCtx();
-    if (!ctx) return;
-
-    const desiredWidths: Record<string, number> = {};
+    const widths: Record<string, number> = {};
+    if (!ctx) return widths;
 
     columns.forEach((col) => {
-      if (!col.id) return;
+      const id = col.id;
+      if (!id) return;
 
       // The Test Status column is a fixed-shape pill, not free text.
-      if (col.id === TEST_STATUS_COL_ID) return;
+      if (id === TEST_STATUS_COL_ID) return;
 
       ctx.font = MEASURE_FONT_BOLD;
       let widest = ctx.measureText(col.title).width;
 
       ctx.font = MEASURE_FONT;
       filledRows.forEach((row) => {
-        const value = row[col.id as string];
+        const value = row[id];
         if (!value) return;
         const w = ctx.measureText(value).width;
         if (w > widest) widest = w;
       });
 
-      desiredWidths[col.id] = Math.min(
+      widths[id] = Math.min(
         MAX_COL_WIDTH,
         Math.max(MIN_COL_WIDTH, Math.ceil(widest) + CELL_TEXT_PADDING),
       );
     });
 
-    setColumns((prev) => {
-      let changed = false;
-      const next = prev.map((c) => {
-        if (!c.id) return c;
-        const desired = desiredWidths[c.id];
-        if (desired !== undefined && desired > (c.width ?? 0)) {
-          changed = true;
-          return { ...c, width: desired };
-        }
-        return c;
-      });
-      return changed ? next : prev;
-    });
-    // Re-run only when the actual content or the set of columns changes —
-    // not on every manual resize or every blank row appended.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filledRows, columnIds, getMeasureCtx]);
+    return widths;
+  }, [columns, filledRows]);
+
+  const displayColumns = useMemo<SizedGridColumn[]>(
+    () =>
+      columns.map((c) => {
+        const auto = c.id ? autoColumnWidths[c.id] : undefined;
+        return auto !== undefined && auto > c.width ? { ...c, width: auto } : c;
+      }),
+    [columns, autoColumnWidths],
+  );
 
   // --- Auto-grow each row so wrapped text is never clipped vertically ---
   const rowHeightMap = useMemo(() => {
@@ -1728,7 +1726,7 @@ const SheetTable = ({
       let maxLines = 1;
       ctx.font = MEASURE_FONT;
 
-      columns.forEach((col) => {
+      displayColumns.forEach((col) => {
         if (!col.id || col.id === TEST_STATUS_COL_ID) return;
         const value = row[col.id];
         if (!value) return;
@@ -1748,7 +1746,7 @@ const SheetTable = ({
     });
 
     return map;
-  }, [filledRowEntries, columns, getMeasureCtx]);
+  }, [filledRowEntries, displayColumns]);
 
   const getRowHeight = useCallback(
     (visRow: number) => {
@@ -1816,7 +1814,7 @@ const SheetTable = ({
         width: ROW_NUMBER_COL_WIDTH,
         hasMenu: false,
       } as GridColumn,
-      ...columns.map((c) => ({
+      ...displayColumns.map((c) => ({
         ...c,
         hasMenu: true,
         // Funnel icon instead of the default triangle, so it's obvious the
@@ -1826,7 +1824,7 @@ const SheetTable = ({
           | undefined,
       })),
     ],
-    [columns, columnFilters],
+    [displayColumns, columnFilters],
   );
 
   // SVG sprites for the header menu icon — plain funnel normally, filled

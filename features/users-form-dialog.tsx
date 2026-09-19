@@ -138,39 +138,53 @@ export function UserFormDialog({
     };
   }, [open, projectOptionsProp]);
 
-  // Reset/prefill the form whenever the dialog opens - either from the user
-  // being edited, or from the page's current filters when creating.
-  useEffect(() => {
-    if (!open) return;
+  // Reset/prefill the form whenever the dialog transitions to open - either
+  // from the user being edited, or from the page's current filters when
+  // creating. Done here (during render) rather than in a useEffect: this is
+  // React's recommended pattern for "reset state when some identity
+  // changes" (see https://react.dev/learn/you-might-not-need-an-effect),
+  // and it avoids the extra render+paint cycle an effect-based reset causes.
+  // `sessionKey` records which "open session" the form currently reflects;
+  // whenever it no longer matches the dialog's current target (it just
+  // opened, or opened for a different user), we resync in this same render.
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const targetKey = open ? (user ? `edit:${user.id}` : "new") : null;
 
-    if (user) {
-      setForm({
-        name: user.name,
-        email: user.email,
-        password: "",
-        role: user.role,
-        seniority_level: user.seniority_level ?? NONE,
-        artifact_type: user.artifact_type ?? NONE,
-        // TODO: rename `UserRow.hireDate` -> `hiredAt` in users-columns.ts
-        // to match the schema field.
-        hiredAt: user.hiredAt ? new Date(user.hiredAt) : null,
-        // TODO: `UserRow` currently only exposes `primaryAssignment` (one
-        // project). Once it exposes the full `assignments` list, prefill
-        // every assigned project here instead of just the primary one.
-        project_ids: user.primaryAssignment
-          ? [user.primaryAssignment.projectId]
-          : [],
-      });
-    } else {
-      setForm({
-        ...emptyState(),
-        role: fixedRole ?? defaultValues?.role ?? "",
-        artifact_type: defaultValues?.artifactType ?? NONE,
-        project_ids: defaultValues?.projectId ? [defaultValues.projectId] : [],
-      });
+  if (targetKey !== sessionKey) {
+    setSessionKey(targetKey);
+    if (targetKey) {
+      setError(null);
+      if (user) {
+        // UserRow doesn't carry a hire date at all (userRowSelect in
+        // lib/users-data.ts doesn't select it) - and the Hire date field
+        // below is only ever shown while creating (`!isEditing`), so
+        // there's nothing to prefill here; it just stays null.
+        const primaryProjectId = user.primaryAssignment?.projectId ?? null;
+        setForm({
+          name: user.name,
+          email: user.email,
+          password: "",
+          role: user.role,
+          seniority_level: user.seniority_level ?? NONE,
+          artifact_type: user.artifact_type ?? NONE,
+          hiredAt: null,
+          // TODO: `UserRow` currently only exposes `primaryAssignment` (one
+          // project). Once it exposes the full `assignments` list, prefill
+          // every assigned project here instead of just the primary one.
+          project_ids: primaryProjectId ? [primaryProjectId] : [],
+        });
+      } else {
+        setForm({
+          ...emptyState(),
+          role: fixedRole ?? defaultValues?.role ?? "",
+          artifact_type: defaultValues?.artifactType ?? NONE,
+          project_ids: defaultValues?.projectId
+            ? [defaultValues.projectId]
+            : [],
+        });
+      }
     }
-    setError(null);
-  }, [open, user, defaultValues, fixedRole]);
+  }
 
   const isConsultant = form.role === "CONSULTANT";
 
@@ -332,7 +346,9 @@ export function UserFormDialog({
               <Label>Seniority</Label>
               <Select
                 value={form.seniority_level}
-                onValueChange={(v) => setForm({ ...form, seniority_level: v })}
+                onValueChange={(v) =>
+                  setForm({ ...form, seniority_level: v ?? NONE })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -353,7 +369,9 @@ export function UserFormDialog({
             <Label>Artifact</Label>
             <Select
               value={form.artifact_type}
-              onValueChange={(v) => setForm({ ...form, artifact_type: v })}
+              onValueChange={(v) =>
+                setForm({ ...form, artifact_type: v ?? NONE })
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -448,7 +466,7 @@ export function UserFormDialog({
                       setForm({ ...form, hiredAt: date ?? null })
                     }
                     disabled={(date) => date > new Date()}
-                    initialFocus
+                    autoFocus
                   />
                   {form.hiredAt && (
                     <div className="border-t p-2">

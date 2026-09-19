@@ -56,7 +56,12 @@ export async function getAuthUser() {
   try {
     const session = await getSession();
     const id = session?.userId;
-    if (!id) return null;
+    // `typeof` guard, not a truthy check — session.userId's declared type
+    // is apparently looser than `string` (e.g. a JWT payload claim typed
+    // as string | number | boolean | object | undefined), and objects are
+    // never falsy, so `if (!id)` alone doesn't fully narrow it to string.
+    // Same pattern getCurrentUser in lib/dal.ts already uses for this.
+    if (typeof id !== "string") return null;
 
     const user = await db.user.findUnique({
       where: { id },

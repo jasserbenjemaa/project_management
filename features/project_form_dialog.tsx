@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   Dialog,
   DialogContent,
@@ -59,19 +59,24 @@ export const ProjectFormDialog = ({
 
   const isEditing = Boolean(project);
 
-  // Reset the form each time the dialog opens.
-  useEffect(() => {
-    if (open) {
+  // Reset the form each time the dialog transitions to open - done during
+  // render (same pattern and reasoning as in users-form-dialog.tsx) rather
+  // than in a useEffect, to avoid the extra render+paint cycle an
+  // effect-based reset causes.
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const targetKey = open ? (project ? `edit:${project.id}` : "new") : null;
+
+  if (targetKey !== sessionKey) {
+    setSessionKey(targetKey);
+    if (targetKey) {
       setName(project?.name ?? "");
       setStatus(project?.status ?? "PLANNED");
-      // TODO: `Project` (features/projects-columns.tsx) needs a
-      // `deliveryDate` field for this to prefill on edit.
       setDeliveryDate(
         project?.deliveryDate ? new Date(project.deliveryDate) : null,
       );
       setError(null);
     }
-  }, [open, project]);
+  }
 
   const handleSubmit = () => {
     setError(null);
@@ -155,7 +160,7 @@ export const ProjectFormDialog = ({
                   mode="single"
                   selected={deliveryDate ?? undefined}
                   onSelect={(date) => setDeliveryDate(date ?? null)}
-                  initialFocus
+                  autoFocus
                 />
                 {deliveryDate && (
                   <div className="border-t p-2">

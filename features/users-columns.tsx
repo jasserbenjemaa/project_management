@@ -12,87 +12,28 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { Role, Level, Artifact } from "@/app/generated/prisma/enums";
-import { Prisma } from "@/app/generated/prisma/client";
 
 // --- Types -------------------------------------------------------------
-// Pulled straight from the generated Prisma client (not hand-duplicated)
-// so this file can never drift out of sync with prisma/schema.prisma.
+// UserRow/UserProjectRef/etc. used to be duplicated here AND in
+// lib/users-data.ts — two independent copies of the same shape, free to
+// drift apart (which is exactly what caused the id: string vs
+// id: string | null mismatch). lib/users-data.ts is the source of truth
+// now (it's where the Prisma select + mapping actually live); re-export
+// from there so nothing importing from "@/features/users-columns" has to
+// change, and so there's only ever one definition to keep in sync with
+// schema.prisma.
+export type {
+  UserRow,
+  UserProjectRef,
+  UserWithRelations,
+} from "@/lib/users-data";
+export { userRowSelect, mapUserToRow } from "@/lib/users-data";
+
+import type { UserRow, UserProjectRef } from "@/lib/users-data";
+
 export type UserRole = Role;
 export type SeniorityLevel = Level;
 export type ArtifactType = Artifact;
-
-export type UserProjectRef = {
-  id: string;
-  name: string;
-};
-
-// The exact `select` used everywhere we read users (see `users-data.ts`).
-// Deliberately a `select`, not an `include`: `include` would also return
-// every scalar field - including `password` - which we never want to send
-// to the client. Keep this in sync with `UserRow`/`mapUserToRow` below.
-export const userRowSelect = {
-  id: true,
-  name: true,
-  email: true,
-  role: true,
-  seniority_level: true,
-  artifact_type: true,
-  assignments: {
-    select: {
-      id: true,
-      roleOnProject: true,
-      startDate: true,
-      project: { select: { id: true, name: true } },
-    },
-  },
-} satisfies Prisma.UserSelect;
-
-export type UserWithRelations = Prisma.UserGetPayload<{
-  select: typeof userRowSelect;
-}>;
-
-// This is the shape the table (and the edit form) expect.
-export type UserRow = {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  seniority_level: SeniorityLevel | null;
-  artifact_type: ArtifactType | null;
-  projects: UserProjectRef[]; // every project this user is assigned to
-  // A user can technically have multiple Assignments, but the "New/Edit
-  // user" dialog only manages one at a time for simplicity. We treat the
-  // first assignment as the "primary" one for prefilling that form. If you
-  // need full multi-project assignment management, build a dedicated
-  // Assignments table/page instead of extending this dialog.
-  primaryAssignment: {
-    id: string;
-    projectId: string;
-    roleOnProject: string;
-    startDate: string; // ISO date string
-  } | null;
-};
-
-export function mapUserToRow(user: UserWithRelations): UserRow {
-  const [primary] = user.assignments;
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    seniority_level: user.seniority_level,
-    artifact_type: user.artifact_type,
-    projects: user.assignments.map((a) => a.project),
-    primaryAssignment: primary
-      ? {
-          id: primary.id,
-          projectId: primary.project.id,
-          roleOnProject: primary.roleOnProject,
-          startDate: primary.startDate.toISOString(),
-        }
-      : null,
-  };
-}
 
 // --- Display config ----------------------------------------------------------
 // `Record<UserRole, ...>` etc. below means TypeScript will now error if the
@@ -180,6 +121,12 @@ const initials = (name: string) =>
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+// Key for a project badge: falls back to the (snapshotted) name when the
+// project itself has been deleted and id is null, since two deleted refs
+// on the same user could otherwise collide on a null key.
+const projectRefKey = (project: UserProjectRef, index: number) =>
+  project.id ?? `${project.name}-${index}`;
 
 // Shared header button that shows an up/down/neutral arrow depending on
 // the column's current sort state, used by any sortable column.
@@ -352,8 +299,18 @@ export const getUserColumns = ({
         const remaining = projects.length - visible.length;
         return (
           <div className="flex flex-wrap items-center gap-1">
-            {visible.map((project) => (
-              <Badge key={project.id} variant="outline">
+            {visible.map((project, index) => (
+              <Badge
+                key={projectRefKey(project, index)}
+                variant="outline"
+                // Deleted projects only survive as a name snapshot — dim
+                // them so it's clear the link/id behind them is gone.
+                className={
+                  project.isDeleted
+                    ? "text-muted-foreground line-through"
+                    : undefined
+                }
+              >
                 {project.name}
               </Badge>
             ))}
@@ -363,6 +320,8 @@ export const getUserColumns = ({
       },
       // Used by the "Project" select filter: matches if the user is assigned
       // to the selected project id, or always matches when value is "all".
+      // A deleted project (id: null) can never match a specific filter
+      // value, which is correct — it's no longer a selectable project.
       filterFn: (row, _id, value: string) => {
         if (value === "all") return true;
         return row.original.projects.some((project) => project.id === value);

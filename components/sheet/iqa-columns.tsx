@@ -1,4 +1,4 @@
-import type { GridColumn } from "@glideapps/glide-data-grid";
+import type { SizedGridColumn } from "@glideapps/glide-data-grid";
 import { PRIORITY_COL_ID } from "./priority-cell";
 import { LEVEL_COL_ID } from "./level-cell";
 import { ORIGIN_COL_ID } from "./origin-cell";
@@ -9,13 +9,17 @@ import { IQA_STATUS_COL_ID } from "./iqa-status-cell";
 // uses ITS_DEFAULT_COLUMNS. See its-columns.ts for the general pattern
 // and the note on why column ids matter once rows exist.
 //
+// Typed as SizedGridColumn[] (not GridColumn[]): SheetTable and
+// SheetsClient require every default column to have a `width`, and
+// GridColumn is a union that also allows width-less columns.
+//
 // Priority reuses the same High/Medium/Low select as the ITS sheet
 // (PRIORITY_COL_ID) — the spec you gave didn't list explicit values for
 // this column, so this assumes it's the same three-level scale already
 // established for ITS rather than introducing a fourth, differently-named
 // priority scale. Easy to change if that's wrong: swap PRIORITY_COL_ID
 // for a plain string id here and it becomes a plain text column instead.
-export const IQA_DEFAULT_COLUMNS: GridColumn[] = [
+export const IQA_DEFAULT_COLUMNS: SizedGridColumn[] = [
   { title: "N°IQA", id: "iqaNumber", width: 100 },
   { title: "Opening date", id: "openingDate", width: 130 },
   { title: "Priority", id: PRIORITY_COL_ID, width: 100 },

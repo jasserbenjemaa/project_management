@@ -4,7 +4,6 @@ import { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, PencilIcon, TrashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CircularProgress } from "@/components/circular-progress";
 import type { ProjectStatus } from "@/app/generated/prisma/enums";
 
 export type { ProjectStatus };
@@ -97,26 +96,6 @@ export const getColumns = ({
         );
       },
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
-    },
-    {
-      accessorKey: "progress",
-      header: ({ column }) => {
-        return (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-3"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          >
-            Progress
-            <ArrowUpDown className="ml-2 size-3.5" />
-          </Button>
-        );
-      },
-      cell: ({ row }) => (
-        <CircularProgress value={row.getValue("progress") as number} />
-      ),
-      sortingFn: (a, b) => a.original.progress - b.original.progress,
     },
     {
       accessorKey: "deliveryDate",

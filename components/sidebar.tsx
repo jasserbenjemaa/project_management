@@ -10,6 +10,7 @@ import {
   FolderOpen,
   User,
   Users,
+  SquareKanban,
   ChartColumnBig,
   PanelLeftOpen,
   TableProperties,
@@ -91,6 +92,12 @@ const navGroups: {
     label: "Reporting",
     items: [
       {
+        linkTo: "personal-sheet",
+        icon: SquareKanban,
+        name: "personal sheet",
+        allowedRoles: ["CONSULTANT"],
+      },
+      {
         linkTo: "/sheets",
         icon: TableProperties,
         name: "Progress Table",
@@ -140,8 +147,11 @@ export function NavSidebar() {
     return null;
   }
 
-  const { name, role } = userData;
-
+  // `role` drives which nav items show, so without it there's nothing
+  // meaningful to render. `name` is display-only, so it gets a fallback.
+  const role = userData.role;
+  if (!role) return null;
+  const name = userData.name ?? "";
   const visibleGroups = navGroups
     .map((group) => ({
       ...group,
@@ -291,7 +301,7 @@ export function NavSidebar() {
               type="button"
               onClick={handleSignOut}
               aria-label="Log out"
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-200 ease-out hover:bg-accent hover:text-foreground ${revealText} !translate-x-0`}
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-200 ease-out hover:bg-accent hover:text-foreground ${revealText} translate-x-0!`}
             >
               <LogOut size={16} />
             </button>
