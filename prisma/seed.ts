@@ -101,7 +101,8 @@ const ARTIFACT_LABELS = ["HLT", "LLT", "LLR", "Code review", "Architecture"];
 // and the % cycling below already handles it safely.
 const ARTIFACT_ROLES = Object.values(Artifact);
 
-// --- Sheet column shape, mirrors initialColumns in sheet-table.tsx ---
+// --- Sheet column shapes ---
+// Mirrors initialColumns in sheet-table.tsx (Progress sheet).
 const SHEET_COLUMNS = [
   { title: "Priority", id: "priority", width: 90 },
   { title: "LLR ID", id: "llrId", width: 110 },
@@ -119,30 +120,48 @@ const SHEET_COLUMNS = [
   { title: "Estimation (days)", id: "estimationDays", width: 140 },
 ];
 
-// NOTE: I wasn't given sheet-table.tsx's column definitions for the ITS
-// and IQA sheet kinds (only PROGRESS's initialColumns were provided), so
-// these two are best-effort placeholders built from the its/iqa/functionName
-// fields that already exist on Task. Swap these for the real columns if
-// your sheet-table.tsx defines something different per kind.
+// Mirrors ITS_DEFAULT_COLUMNS / IQA_DEFAULT_COLUMNS in its-columns.tsx /
+// iqa-columns.tsx exactly (same ids, same order, same widths). This has
+// to match: SheetTable prefers saved.columns over the defaultColumns prop
+// once a sheet has ever been saved (see the loadSheet effect in
+// sheet-table.tsx), so whatever ids get written here are what a seeded
+// ITS/IQA sheet actually renders with, regardless of what the ITS/IQA
+// page passes in as defaultColumns. An earlier version of this script
+// invented its own placeholder ids (testCaseId, auditor, finding, ...)
+// before its-columns.tsx/iqa-columns.tsx existed — that's what made
+// seeded ITS/IQA sheets show the wrong column names.
 const ITS_SHEET_COLUMNS = [
-  { title: "LLR ID", id: "llrId", width: 110 },
-  { title: "Function Name", id: "functionName", width: 160 },
-  { title: "Test Case ID", id: "testCaseId", width: 130 },
-  { title: "ITS Ref", id: "its", width: 110 },
-  { title: "Result", id: "result", width: 100 },
-  { title: "Tester", id: "tester", width: 130 },
-  { title: "Date (JJ/MM/AAAA)", id: "testDate", width: 150 },
-  { title: "Comment", id: "comment", width: 220 },
+  { title: "N°ITS", id: "itsNumber", width: 100 },
+  { title: "Opening date", id: "openingDate", width: 130 },
+  { title: "Priority", id: "itsPriority", width: 100 },
+  { title: "Batch", id: "batch", width: 100 },
+  { title: "Component", id: "component", width: 140 },
+  { title: "Requirement", id: "requirement", width: 140 },
+  { title: "ITS description", id: "itsDescription", width: 240 },
+  { title: "LLR/LLT answer - discussion", id: "answerDiscussion", width: 240 },
+  { title: "LLT", id: "itsAuthorLLT", width: 120 },
+  { title: "LLR", id: "itsAuthorLLR", width: 120 },
+  { title: "Status", id: "itsStatus", width: 120 },
 ];
 
 const IQA_SHEET_COLUMNS = [
-  { title: "LLR ID", id: "llrId", width: 110 },
-  { title: "Function Name", id: "functionName", width: 160 },
-  { title: "IQA Ref", id: "iqa", width: 110 },
-  { title: "Auditor", id: "auditor", width: 130 },
-  { title: "Finding", id: "finding", width: 220 },
-  { title: "Status", id: "status", width: 120 },
-  { title: "Date (JJ/MM/AAAA)", id: "auditDate", width: 150 },
+  { title: "N°IQA", id: "iqaNumber", width: 100 },
+  { title: "Opening date", id: "openingDate", width: 130 },
+  { title: "Priority", id: "itsPriority", width: 100 },
+  { title: "Level", id: "iqaLevel", width: 130 },
+  { title: "Origin", id: "iqaOrigin", width: 110 },
+  { title: "Component", id: "component", width: 140 },
+  { title: "Requirement", id: "requirement", width: 140 },
+  { title: "Discussion", id: "discussion", width: 220 },
+  {
+    title: "Customer answer - discussion",
+    id: "customerAnswerDiscussion",
+    width: 240,
+  },
+  { title: "Customer", id: "customer", width: 140 },
+  { title: "CAP", id: "cap", width: 120 },
+  { title: "Status", id: "iqaStatus", width: 150 },
+  { title: "CR NBR", id: "crNumber", width: 110 },
 ];
 
 const STATUS_LLT_OPTIONS = [
@@ -158,6 +177,42 @@ const STATUS_LLT_OPTIONS = [
   "Out of scop",
   "Blocked",
 ] as const;
+
+// Mirror the strict-select option lists in priority-cell.tsx /
+// its-status-cell.tsx / level-cell.tsx / origin-cell.tsx /
+// iqa-status-cell.tsx — same manual-sync situation as STATUS_LLT_OPTIONS
+// above (the seed script builds rows directly rather than importing the
+// .tsx cell files, so these have to be kept in sync by hand).
+const ITS_PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
+const ITS_STATUS_OPTIONS = ["Open", "Postponed", "Rejected", "Closed"] as const;
+const LEVEL_OPTIONS = [
+  "LLR",
+  "LLT",
+  "HLT",
+  "Architecture",
+  "Code review",
+] as const;
+const ORIGIN_OPTIONS = ["Code", "Spec", "Code/Spec"] as const;
+const IQA_STATUS_OPTIONS = [
+  "Open",
+  "Postponed",
+  "Rejected",
+  "Closed",
+  "CR to be created",
+] as const;
+
+// Best-effort placeholder component names — no real list was given for
+// this field. Swap for the real component catalog if there is one.
+const COMPONENT_NAMES = [
+  "Engine Control",
+  "Sensor Fusion",
+  "Diagnostics",
+  "Power Management",
+  "Communication Bus",
+  "User Interface",
+  "Safety Monitor",
+  "Calibration",
+];
 
 // Mirrors SHEET_STATUS_TO_TASK_STATUS in actions/sheet.ts — kept in sync
 // manually since the seed script builds Task rows directly instead of
@@ -310,10 +365,21 @@ async function main() {
     createdAt: Date;
   }[] = [];
 
-  // 3-8. one pass per project: create the project, its EMs (each with a
-  // distinct artifact role), consultants under each EM (inheriting that
-  // role), a Task + sheet row per line item (kept 1:1, same as the real
-  // sheet-save sync), assignments, time entries, and a sheet per kind.
+  // 3-9. one pass per project: create the project, its EMs (each with a
+  // distinct artifact role) and their consultants, then a Task + sheet
+  // row per line item (kept 1:1, same as the real sheet-save sync),
+  // assignments, time entries, and a sheet per kind.
+  //
+  // EM/consultant creation and sheet-row generation are deliberately two
+  // separate passes now (they used to be nested, one EM's rows generated
+  // right after that EM's own consultants). Author LLR / Author LLT need
+  // to be picked from whoever on the *whole project* is actually tagged
+  // artifact_type LLR / LLT (mirroring authorSuggestionsByCol in
+  // sheet-table.tsx, which scopes the real autosuggest dropdown to
+  // consultants on the project with the matching artifact_type) — that
+  // pool isn't known until every EM and consultant for the project
+  // exists, so row generation has to wait until after the first pass.
+  //
   // Project kickoff dates are stratified one-per-slice across the window
   // (see windowSlice) so the 15 projects don't all land in the same week;
   // everything belonging to a project (its EMs, consultants, tasks,
@@ -346,10 +412,24 @@ async function main() {
     // entries have something real to reference — keeping each task's own
     // createdAt too, so a logged entry never predates the task it's on.
     const tasks: { id: string; createdAt: Date }[] = [];
-    // Sheet rows accumulate as we create EMs/consultants below, so the
-    // Author LLR / Author LLT columns reference real names on this project.
+    // Sheet rows accumulate as rows are generated in the second pass
+    // below, so the Author LLR / Author LLT columns reference real names
+    // on this project.
     const sheetRows: Record<string, string>[] = [];
 
+    // Consultants on this project, tagged with the artifact role they
+    // inherited from their EM. Only consultants go in here — EMs are
+    // managers, not the people whose names belong in an Author LLR /
+    // Author LLT cell, matching getUserSuggestions' "consultants assigned
+    // to this project" scope (see sheet-table.tsx).
+    const projectConsultants: {
+      id: string;
+      name: string;
+      artifactRole: Artifact;
+      createdAt: Date;
+    }[] = [];
+
+    // --- Pass 1: create every EM and consultant for this project ---
     for (let e = 0; e < EMS_PER_PROJECT; e++) {
       const artifactRole = ARTIFACT_ROLES[e % ARTIFACT_ROLES.length];
 
@@ -387,7 +467,6 @@ async function main() {
       });
 
       // consultants under this EM, inheriting the EM's artifact role.
-      const consultantsUnderEm = [];
       for (let c = 0; c < CONSULTANTS_PER_EM; c++) {
         const consultantCreatedAt = dateInWindow(emCreatedAt, WINDOW_END);
         const consultant = await prisma.user.create({
@@ -405,8 +484,10 @@ async function main() {
           },
         });
         consultantCounter++;
-        consultantsUnderEm.push({
-          ...consultant,
+        projectConsultants.push({
+          id: consultant.id,
+          name: consultant.name,
+          artifactRole,
           createdAt: consultantCreatedAt,
         });
         allConsultants.push({
@@ -437,74 +518,92 @@ async function main() {
           },
         });
       }
+    }
 
-      // A few sheet rows per EM, each backed by a real Task row (same
-      // shape actions/sheet.ts's syncSheetRowsToTasks produces), authored
-      // by this EM and its consultants.
-      for (let r = 0; r < ROWS_PER_EM; r++) {
-        const rowNum = sheetRows.length + 1;
-        const author = pick(consultantsUnderEm);
-        const testStatus = pick(["OK", "KO"]);
-        const statusLLT = pick(STATUS_LLT_OPTIONS);
-        const rowId = genRowId();
-        const llrId = `REQ-${faker.string.alpha({ length: 4, casing: "upper" })}-FUNCT-NAME${rowNum}`;
-        const functionName = `Funct-Name${rowNum}`;
-        const complexity = faker.number.int({ min: 1, max: 10 });
-        const fileC = `funct-name${rowNum}.c`;
-        const codeVersion = `v${faker.system.semver()}`;
-        const its = faker.datatype.boolean(0.3)
-          ? `ITS#${faker.number.int({ min: 1000, max: 9999 })}`
-          : "";
-        const iqa = faker.datatype.boolean(0.2)
-          ? `IQA#${faker.number.int({ min: 1000, max: 9999 })}`
-          : "";
-        const estimationDays = faker.number.float({
-          min: 0.5,
-          max: 10,
-          fractionDigits: 1,
-        });
+    // --- Author pools: consultants actually tagged LLR / LLT on this
+    // project. Falls back to any consultant on the project if nobody
+    // happens to be tagged that way yet — same fallback
+    // authorSuggestionsByCol uses in sheet-table.tsx.
+    const llrPool = projectConsultants.filter(
+      (u) => u.artifactRole === Artifact.LLR,
+    );
+    const lltPool = projectConsultants.filter(
+      (u) => u.artifactRole === Artifact.LLT,
+    );
+    const llrCandidates = llrPool.length > 0 ? llrPool : projectConsultants;
+    const lltCandidates = lltPool.length > 0 ? lltPool : projectConsultants;
 
-        sheetRows.push({
-          [ROW_ID_KEY]: rowId,
-          priority: String(faker.number.int({ min: 1, max: 5 })),
-          llrId,
+    // --- Pass 2: sheet rows + tasks, now that the LLR/LLT pools exist ---
+    const totalRows = EMS_PER_PROJECT * ROWS_PER_EM;
+    for (let r = 0; r < totalRows; r++) {
+      const rowNum = r + 1;
+      const llrAuthor = pick(llrCandidates);
+      const lltAuthor = pick(lltCandidates);
+      const testStatus = pick(["OK", "KO"]);
+      const statusLLT = pick(STATUS_LLT_OPTIONS);
+      const rowId = genRowId();
+      const llrId = `REQ-${faker.string.alpha({ length: 4, casing: "upper" })}-FUNCT-NAME${rowNum}`;
+      const functionName = `Funct-Name${rowNum}`;
+      const complexity = faker.number.int({ min: 1, max: 10 });
+      const fileC = `funct-name${rowNum}.c`;
+      const codeVersion = `v${faker.system.semver()}`;
+      const its = faker.datatype.boolean(0.3)
+        ? `ITS#${faker.number.int({ min: 1000, max: 9999 })}`
+        : "";
+      const iqa = faker.datatype.boolean(0.2)
+        ? `IQA#${faker.number.int({ min: 1000, max: 9999 })}`
+        : "";
+      const estimationDays = faker.number.float({
+        min: 0.5,
+        max: 10,
+        fractionDigits: 1,
+      });
+
+      sheetRows.push({
+        [ROW_ID_KEY]: rowId,
+        priority: String(faker.number.int({ min: 1, max: 5 })),
+        llrId,
+        functionName,
+        complexity: String(complexity),
+        fileC,
+        codeVersion,
+        authorLLR: llrAuthor.name,
+        authorLLT: lltAuthor.name,
+        testStatus,
+        its,
+        iqa,
+        commentLLT: testStatus === "KO" ? faker.lorem.sentence() : "",
+        statusLLTDate: statusLLT,
+        estimationDays: String(estimationDays),
+      });
+
+      // Neither author should appear to have written this before they
+      // themselves existed on the project.
+      const authorsReadyAt = new Date(
+        Math.max(llrAuthor.createdAt.getTime(), lltAuthor.createdAt.getTime()),
+      );
+      const taskCreatedAt = dateInWindow(authorsReadyAt, WINDOW_END);
+      const task = await prisma.task.create({
+        data: {
+          title: functionName,
+          status: STATUS_LLT_TO_TASK_STATUS[statusLLT],
+          projectId: project.id,
+          estimatedDays: estimationDays,
+          sheetRowId: rowId,
           functionName,
-          complexity: String(complexity),
+          llrId,
           fileC,
           codeVersion,
-          authorLLR: em.name,
-          authorLLT: author.name,
-          testStatus,
-          its,
-          iqa,
-          commentLLT: testStatus === "KO" ? faker.lorem.sentence() : "",
-          statusLLTDate: statusLLT,
-          estimationDays: String(estimationDays),
-        });
-
-        const taskCreatedAt = dateInWindow(author.createdAt, WINDOW_END);
-        const task = await prisma.task.create({
-          data: {
-            title: functionName,
-            status: STATUS_LLT_TO_TASK_STATUS[statusLLT],
-            projectId: project.id,
-            estimatedDays: estimationDays,
-            sheetRowId: rowId,
-            functionName,
-            llrId,
-            fileC,
-            codeVersion,
-            complexity,
-            its: its || null,
-            iqa: iqa || null,
-            assigneeLLRId: em.id,
-            assigneeLLTId: author.id,
-            createdAt: taskCreatedAt,
-            updatedAt: dateInWindow(taskCreatedAt, WINDOW_END),
-          },
-        });
-        tasks.push({ id: task.id, createdAt: taskCreatedAt });
-      }
+          complexity,
+          its: its || null,
+          iqa: iqa || null,
+          assigneeLLRId: llrAuthor.id,
+          assigneeLLTId: lltAuthor.id,
+          createdAt: taskCreatedAt,
+          updatedAt: dateInWindow(taskCreatedAt, WINDOW_END),
+        },
+      });
+      tasks.push({ id: task.id, createdAt: taskCreatedAt });
     }
 
     // Time entries for EMs/consultants, logged against the real Task rows
@@ -551,20 +650,32 @@ async function main() {
       },
     });
 
+    // ITS rows reuse the Progress row's own authorLLR/authorLLT (already
+    // pooled from consultants tagged LLR/LLT above) rather than picking
+    // again, so the same task's Progress-sheet and ITS-sheet entries
+    // agree on who authored it.
     const itsRows = sheetRows
       .filter((row) => row.its)
       .map((row) => ({
         [ROW_ID_KEY]: genRowId(),
-        llrId: row.llrId,
-        functionName: row.functionName,
-        testCaseId: `TC-${faker.number.int({ min: 100, max: 999 })}`,
-        its: row.its,
-        result: pick(["Pass", "Fail", "Blocked"]),
-        tester: row.authorLLT,
-        testDate: dateInWindow(projectCreatedAt, WINDOW_END).toLocaleDateString(
-          "fr-FR",
-        ),
-        comment: faker.datatype.boolean(0.3) ? faker.lorem.sentence() : "",
+        itsNumber: row.its.replace(/^ITS#/, ""),
+        openingDate: dateInWindow(
+          projectCreatedAt,
+          WINDOW_END,
+        ).toLocaleDateString("fr-FR"),
+        itsPriority: pick(ITS_PRIORITY_OPTIONS),
+        batch: `Batch ${faker.number.int({ min: 1, max: 12 })}`,
+        component: pick(COMPONENT_NAMES),
+        // Best-effort: reuses the task's LLR ID as the linked requirement
+        // reference. Swap if the real convention differs.
+        requirement: row.llrId,
+        itsDescription: faker.lorem.sentence(),
+        answerDiscussion: faker.datatype.boolean(0.7)
+          ? faker.lorem.sentence()
+          : "",
+        itsAuthorLLT: row.authorLLT,
+        itsAuthorLLR: row.authorLLR,
+        itsStatus: pick(ITS_STATUS_OPTIONS),
       }));
     const itsSheetCreatedAt = dateInWindow(projectCreatedAt, WINDOW_END);
     await prisma.sheet.create({
@@ -579,21 +690,39 @@ async function main() {
       },
     });
 
+    // IQA_DEFAULT_COLUMNS has no LLR/LLT author column (see iqa-columns.tsx)
+    // — nothing here needs the author pools.
     const iqaRows = sheetRows
       .filter((row) => row.iqa)
-      .map((row) => ({
-        [ROW_ID_KEY]: genRowId(),
-        llrId: row.llrId,
-        functionName: row.functionName,
-        iqa: row.iqa,
-        auditor: row.authorLLR,
-        finding: faker.lorem.sentence(),
-        status: pick(["Open", "In Review", "Closed"]),
-        auditDate: dateInWindow(
-          projectCreatedAt,
-          WINDOW_END,
-        ).toLocaleDateString("fr-FR"),
-      }));
+      .map((row) => {
+        const iqaStatus = pick(IQA_STATUS_OPTIONS);
+        return {
+          [ROW_ID_KEY]: genRowId(),
+          iqaNumber: row.iqa.replace(/^IQA#/, ""),
+          openingDate: dateInWindow(
+            projectCreatedAt,
+            WINDOW_END,
+          ).toLocaleDateString("fr-FR"),
+          itsPriority: pick(ITS_PRIORITY_OPTIONS),
+          iqaLevel: pick(LEVEL_OPTIONS),
+          iqaOrigin: pick(ORIGIN_OPTIONS),
+          component: pick(COMPONENT_NAMES),
+          requirement: row.llrId,
+          discussion: faker.lorem.sentence(),
+          customerAnswerDiscussion: faker.datatype.boolean(0.6)
+            ? faker.lorem.sentence()
+            : "",
+          customer: faker.company.name(),
+          cap: faker.datatype.boolean(0.4)
+            ? `CAP-${faker.number.int({ min: 100, max: 999 })}`
+            : "",
+          iqaStatus,
+          crNumber:
+            iqaStatus === "CR to be created"
+              ? `CR-${faker.number.int({ min: 1000, max: 9999 })}`
+              : "",
+        };
+      });
     const iqaSheetCreatedAt = dateInWindow(projectCreatedAt, WINDOW_END);
     await prisma.sheet.create({
       data: {
@@ -608,7 +737,7 @@ async function main() {
     });
   }
 
-  // 9. bench consultants — exist in the org but aren't staffed on any
+  // 10. bench consultants — exist in the org but aren't staffed on any
   // project right now (no Assignment row at all). Report straight to a
   // unit manager, same as a real consultant waiting between engagements.
   // Their own records are stratified across the window like everyone else's.
@@ -632,7 +761,7 @@ async function main() {
     consultantCounter++;
   }
 
-  // 10. cross-project assignments — Assignment's unique constraint is
+  // 11. cross-project assignments — Assignment's unique constraint is
   // [userId, projectId], so a consultant can legitimately carry a second,
   // lighter assignment on another project at the same time. Start date
   // has to come after both the consultant and the second project exist.
@@ -669,7 +798,7 @@ async function main() {
     crossAssignedCount++;
   }
 
-  // 11. standalone sheets — no projectId, so @@unique([projectId, kind])
+  // 12. standalone sheets — no projectId, so @@unique([projectId, kind])
   // never applies to them (Postgres doesn't treat NULLs as colliding).
   // Blank templates rather than seeded with rows, since "manually-created"
   // implies nobody's synced tasks into them yet.
