@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prisma7:generate": "prisma7 generate",
+    "prisma7:migrate": "prisma7 migrate dev"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -49,6 +51,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.5.0",
+    "@prisma/prisma7": "^7.10.0-dev.58",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
     "@types/node": "^20",
@@ -59,7 +62,6 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
-    "prisma": "^7.9.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
     "typescript": "^5"
