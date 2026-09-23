@@ -5,6 +5,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { NavSidebar } from "@/components/sidebar";
+export const dynamic = "force-dynamic";
 export default function DashboardLayout({
   children,
 }: {

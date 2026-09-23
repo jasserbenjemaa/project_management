@@ -75,8 +75,9 @@ export async function createSession(userId: string) {
 }
 
 export async function getSession() {
+  const cookieStore = await cookies();
+
   try {
-    const cookieStore = await cookies();
     const token = cookieStore.get(TOKEN_NAME)?.value;
     if (!token) return null;
     const payload = await verifyJWT(token);
@@ -86,7 +87,6 @@ export async function getSession() {
     return null;
   }
 }
-
 export async function deleteSession() {
   const cookieStore = await cookies();
   cookieStore.delete(TOKEN_NAME);
