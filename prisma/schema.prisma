@@ -23,7 +23,6 @@ model User {
   manager         User?        @relation("ReportsTo", fields: [managerId], references: [id])
   managerId       String?
   reports         User[]       @relation("ReportsTo")
-
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   tasksAsLLRAuthor Task[] @relation("TaskLLRAuthor")
@@ -98,6 +97,7 @@ model TimeEntry {
   taskId    String
   days      Float
   loggedAt  DateTime @default(now())
+  note      String?
   createdAt DateTime @default(now())
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])
