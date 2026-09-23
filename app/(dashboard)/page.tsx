@@ -84,6 +84,7 @@ const Home = () => {
       name: "KPIs",
       color: "green",
       description: "View performance metrics and KPIs",
+      allowedRoles: ["UNIT_MANAGER", "ENGAGEMENT_MANAGER"],
     },
   ];
   const cards = allCards.filter(

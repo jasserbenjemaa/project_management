@@ -9,8 +9,28 @@ import {
 } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getUserByEmail } from "@/lib/dal";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 
+// ...
+
+export async function getAuthUser() {
+  try {
+    const session = await getSession();
+    const id = session?.userId;
+    if (typeof id !== "string") return null;
+
+    const user = await db.user.findUnique({
+      where: { id },
+      select: { id: true, name: true, role: true },
+    });
+
+    return user;
+  } catch (e) {
+    unstable_rethrow(e); // lets Next's dynamic-usage / redirect errors pass through
+    console.error("error in getting auth user:", e);
+    return null;
+  }
+}
 const SignInSchema = z.object({
   email: z.email("invalid email format").min(1, "Email is required"),
   password: z.string().min(1, "Password is required"),
@@ -50,27 +70,4 @@ export async function signIn(formData: FormData): Promise<ActionResponse> {
 export async function signOut() {
   await deleteSession();
   redirect("/sign-in");
-}
-
-export async function getAuthUser() {
-  try {
-    const session = await getSession();
-    const id = session?.userId;
-    // `typeof` guard, not a truthy check — session.userId's declared type
-    // is apparently looser than `string` (e.g. a JWT payload claim typed
-    // as string | number | boolean | object | undefined), and objects are
-    // never falsy, so `if (!id)` alone doesn't fully narrow it to string.
-    // Same pattern getCurrentUser in lib/dal.ts already uses for this.
-    if (typeof id !== "string") return null;
-
-    const user = await db.user.findUnique({
-      where: { id },
-      select: { id: true, name: true, role: true },
-    });
-
-    return user;
-  } catch (e) {
-    console.error("error in getting auth user:", e);
-    return null;
-  }
 }

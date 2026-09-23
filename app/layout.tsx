@@ -7,7 +7,7 @@ import { Toaster } from "sonner";
 import "@glideapps/glide-data-grid/dist/index.css";
 import { UserProvider } from "@/context/user-context";
 import { getAuthUser } from "./actions/auth";
-
+export const dynamic = "force-dynamic";
 const robotoHeading = Roboto({
   subsets: ["latin"],
   variable: "--font-heading",

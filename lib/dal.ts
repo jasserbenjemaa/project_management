@@ -168,30 +168,31 @@ export async function getCurrentUserProjects() {
 
   return projects.map(serializeProject);
 }
+
 export async function getHistory() {
+  // Outside try/catch so Next's dynamic-usage signal can propagate
+  const session = await getSession();
+  if (!session) return null;
+  const userId = session.userId;
+  if (typeof userId !== "string" || !userId) return null;
+
   try {
-    const session = await getSession();
-    if (!session) return null;
-    const userId = session.userId;
-    if (typeof userId !== "string" || !userId) return null;
     const history = await db.assignment.findMany({
-      where: { userId: userId },
+      where: { userId },
       orderBy: { startDate: "desc" },
       select: {
         id: true,
         roleOnProject: true,
         startDate: true,
         endDate: true,
-        projectName: true, // snapshot, always available
+        projectName: true,
         projectId: true,
-        project: {
-          // live relation, null if project was deleted
-          select: { status: true },
-        },
+        project: { select: { status: true } },
       },
     });
     return history;
   } catch (e) {
     console.log("error in getting user projects history: ", e);
+    return null; // the original returned undefined here
   }
 }
