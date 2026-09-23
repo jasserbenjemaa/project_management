@@ -92,13 +92,6 @@ function windowSlice(index: number, total: number): [Date, Date] {
   return [from, to];
 }
 
-const ARTIFACT_LABELS = ["HLT", "LLT", "LLR", "Code review", "Architecture"];
-
-// The 5 Artifact enum values, one per EM per project — this is the "role"
-// (LLR / LLT / HLT / ...) each EM owns, and their consultants inherit it.
-// EMS_PER_PROJECT (7) is more than ARTIFACT_ROLES.length (5), so a couple
-// of roles double up per project — realistic for a bigger project team,
-// and the % cycling below already handles it safely.
 const ARTIFACT_ROLES = Object.values(Artifact);
 
 // --- Sheet column shapes ---
